@@ -53,6 +53,9 @@ CREATE TABLE patients (
     -- Primary Key
     patient_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     
+    -- Link to Supabase Auth
+    user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+    
     -- User Type
     is_patient BOOLEAN NOT NULL DEFAULT true,
     is_caregiver BOOLEAN NOT NULL DEFAULT false,
@@ -60,9 +63,6 @@ CREATE TABLE patients (
     -- Basic Information
     patient_name VARCHAR(100) NOT NULL,
     birthday DATE NOT NULL,
-    age INTEGER GENERATED ALWAYS AS (
-        EXTRACT(YEAR FROM AGE(CURRENT_DATE, birthday))
-    ) STORED,
     sex_assigned_at_birth sex_assigned NOT NULL,
     
     -- Sepsis Context
@@ -111,10 +111,8 @@ CREATE TABLE patients (
     -- Wound Status
     has_active_wound BOOLEAN DEFAULT false,
     
-    -- Risk Flags (Auto-calculated)
-    is_high_risk BOOLEAN GENERATED ALWAYS AS (
-        age > 65 OR has_weakened_immune OR readmitted_count > 1
-    ) STORED,
+    -- Risk Flags (calculated by trigger)
+    is_high_risk BOOLEAN DEFAULT false,
     
     -- Timestamps
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
@@ -125,7 +123,6 @@ CREATE TABLE patients (
         (is_patient = true AND is_caregiver = false) OR 
         (is_patient = false AND is_caregiver = true)
     ),
-    CONSTRAINT valid_age CHECK (age >= 0 AND age <= 120),
     CONSTRAINT valid_readmitted_count CHECK (readmitted_count >= 0),
     CONSTRAINT valid_days_since_discharge CHECK (
         days_since_last_discharge IS NULL OR days_since_last_discharge >= 0
@@ -139,6 +136,7 @@ CREATE TABLE patients (
 -- Index for faster lookups
 CREATE INDEX idx_patients_created_at ON patients(created_at);
 CREATE INDEX idx_patients_high_risk ON patients(is_high_risk) WHERE is_high_risk = true;
+CREATE UNIQUE INDEX idx_patients_user_id ON patients(user_id);
 
 -- =============================================================================
 -- DAILY CHECK-INS TABLE
@@ -414,6 +412,23 @@ CREATE TRIGGER update_daily_checkins_updated_at
     FOR EACH ROW
     EXECUTE FUNCTION update_updated_at_column();
 
+-- Function to calculate is_high_risk based on age, immune status, and readmissions
+CREATE OR REPLACE FUNCTION calculate_high_risk()
+RETURNS TRIGGER AS $$
+DECLARE
+    patient_age INTEGER;
+BEGIN
+    patient_age := EXTRACT(YEAR FROM AGE(CURRENT_DATE, NEW.birthday));
+    NEW.is_high_risk := (patient_age > 65 OR NEW.has_weakened_immune OR NEW.readmitted_count > 1);
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER calculate_patient_high_risk
+    BEFORE INSERT OR UPDATE ON patients
+    FOR EACH ROW
+    EXECUTE FUNCTION calculate_high_risk();
+
 -- =============================================================================
 -- ROW LEVEL SECURITY (RLS) - Enable for Supabase
 -- =============================================================================
@@ -425,22 +440,22 @@ ALTER TABLE daily_checkins ENABLE ROW LEVEL SECURITY;
 -- Policies for patients table
 CREATE POLICY "Users can view their own patient record"
     ON patients FOR SELECT
-    USING (auth.uid()::text = patient_id::text);
+    USING (auth.uid() = user_id);
 
 CREATE POLICY "Users can insert their own patient record"
     ON patients FOR INSERT
-    WITH CHECK (auth.uid()::text = patient_id::text);
+    WITH CHECK (auth.uid() = user_id);
 
 CREATE POLICY "Users can update their own patient record"
     ON patients FOR UPDATE
-    USING (auth.uid()::text = patient_id::text);
+    USING (auth.uid() = user_id);
 
 -- Policies for daily_checkins table
 CREATE POLICY "Users can view their own check-ins"
     ON daily_checkins FOR SELECT
     USING (
         patient_id IN (
-            SELECT patient_id FROM patients WHERE auth.uid()::text = patient_id::text
+            SELECT patient_id FROM patients WHERE user_id = auth.uid()
         )
     );
 
@@ -448,7 +463,7 @@ CREATE POLICY "Users can insert their own check-ins"
     ON daily_checkins FOR INSERT
     WITH CHECK (
         patient_id IN (
-            SELECT patient_id FROM patients WHERE auth.uid()::text = patient_id::text
+            SELECT patient_id FROM patients WHERE user_id = auth.uid()
         )
     );
 
@@ -456,13 +471,21 @@ CREATE POLICY "Users can update their own check-ins"
     ON daily_checkins FOR UPDATE
     USING (
         patient_id IN (
-            SELECT patient_id FROM patients WHERE auth.uid()::text = patient_id::text
+            SELECT patient_id FROM patients WHERE user_id = auth.uid()
         )
     );
 
 -- =============================================================================
 -- HELPER FUNCTIONS
 -- =============================================================================
+
+-- Function to calculate age from birthday
+CREATE OR REPLACE FUNCTION calculate_age(birthday DATE)
+RETURNS INTEGER AS $$
+BEGIN
+    RETURN EXTRACT(YEAR FROM AGE(CURRENT_DATE, birthday));
+END;
+$$ LANGUAGE plpgsql STABLE;
 
 -- Function to calculate temperature zone
 CREATE OR REPLACE FUNCTION calculate_temperature_zone(temp NUMERIC)
@@ -547,19 +570,20 @@ $$ LANGUAGE plpgsql IMMUTABLE;
 -- VIEWS FOR COMMON QUERIES
 -- =============================================================================
 
--- View: Recent high-risk check-ins
+-- View: Recent high-risk check-ins (filtered by authenticated user)
 CREATE OR REPLACE VIEW high_risk_checkins AS
 SELECT 
     dc.*,
     p.patient_name,
-    p.age,
+    calculate_age(p.birthday) as age,
     p.is_high_risk as patient_high_risk
 FROM daily_checkins dc
 JOIN patients p ON dc.patient_id = p.patient_id
 WHERE dc.risk_level IN ('HIGH', 'CRITICAL')
+  AND p.user_id = auth.uid()
 ORDER BY dc.checkin_date DESC, dc.risk_score DESC;
 
--- View: Patient summary with latest check-in
+-- View: Patient summary with latest check-in (filtered by authenticated user)
 CREATE OR REPLACE VIEW patient_summary AS
 SELECT 
     p.*,
@@ -572,7 +596,8 @@ LEFT JOIN LATERAL (
     WHERE patient_id = p.patient_id
     ORDER BY checkin_date DESC
     LIMIT 1
-) dc ON true;
+) dc ON true
+WHERE p.user_id = auth.uid();
 
 -- =============================================================================
 -- COMMENTS FOR DOCUMENTATION
@@ -595,6 +620,7 @@ COMMENT ON COLUMN daily_checkins.survey_terminated_early IS 'True if survey stop
 /*
 INSERT INTO patients (
     patient_id,
+    user_id,  -- Must match auth.uid() of logged-in user
     is_patient,
     is_caregiver,
     patient_name,
