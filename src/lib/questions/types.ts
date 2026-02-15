@@ -161,9 +161,10 @@ export type PatientFormData = Partial<Omit<Patient, 'patient_id' | 'is_high_risk
 
 /**
  * Daily check-in form data (partial DailyCheckin for form submission)
- * Excludes auto-generated fields like daily_checkin_id, risk_score, risk_level, timestamps
+ * Risk calculation fields are included since they're calculated by riskCalculator.ts before submission
+ * Only excludes auto-generated fields: daily_checkin_id, timestamps
  */
-export type DailyCheckInFormData = Partial<Omit<DailyCheckin, 'daily_checkin_id' | 'risk_score' | 'risk_level' | 'created_at' | 'updated_at'>> & {
+export type DailyCheckInFormData = Partial<Omit<DailyCheckin, 'daily_checkin_id' | 'created_at' | 'updated_at'>> & {
   patient_id: string;
 };
 
