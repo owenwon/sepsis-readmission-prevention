@@ -247,121 +247,21 @@ CREATE TABLE daily_checkins (
     additional_notes TEXT,
     
     -- =========================================================================
-    -- RISK SCORING (Auto-calculated)
+    -- RISK SCORING (Calculated by TypeScript riskCalculator.ts)
+    -- These values are populated by the application, not auto-calculated in SQL
     -- =========================================================================
-    risk_score INTEGER GENERATED ALWAYS AS (
-        -- Start with base score
-        0 +
-        -- Immediate danger flags (100 points each)
-        CASE WHEN fainted_or_very_dizzy THEN 100 ELSE 0 END +
-        CASE WHEN severe_trouble_breathing THEN 100 ELSE 0 END +
-        CASE WHEN severe_confusion THEN 100 ELSE 0 END +
-        CASE WHEN extreme_heat_or_chills THEN 100 ELSE 0 END +
-        -- Red zone vitals (50 points each)
-        CASE WHEN temperature_zone = 'red' THEN 50 ELSE 0 END +
-        CASE WHEN oxygen_level_zone = 'red' THEN 50 ELSE 0 END +
-        CASE WHEN heart_rate_zone = 'red' THEN 50 ELSE 0 END +
-        CASE WHEN blood_pressure_zone = 'red' THEN 50 ELSE 0 END +
-        -- Red zone symptoms (30 points each)
-        CASE WHEN thinking_level = 3 THEN 30 ELSE 0 END +
-        CASE WHEN breathing_level = 3 THEN 30 ELSE 0 END +
-        CASE WHEN energy_level = 3 THEN 30 ELSE 0 END +
-        CASE WHEN urine_appearance_level = 3 THEN 30 ELSE 0 END +
-        CASE WHEN wound_state_level = 3 THEN 30 ELSE 0 END +
-        -- Yellow zone (10 points each)
-        CASE WHEN temperature_zone = 'yellow' THEN 10 ELSE 0 END +
-        CASE WHEN oxygen_level_zone = 'yellow' THEN 10 ELSE 0 END +
-        CASE WHEN heart_rate_zone = 'yellow' THEN 10 ELSE 0 END +
-        CASE WHEN blood_pressure_zone = 'yellow' THEN 10 ELSE 0 END +
-        -- Other high-risk indicators (20 points each)
-        CASE WHEN discolored_skin THEN 20 ELSE 0 END +
-        CASE WHEN pain_level >= 7 THEN 20 ELSE 0 END +
-        -- Moderate indicators (10 points each)
-        CASE WHEN cough_worsening = true THEN 10 ELSE 0 END +
-        CASE WHEN uti_symptoms_worsening = 'worsened' THEN 10 ELSE 0 END +
-        CASE WHEN nausea_vomiting_diarrhea THEN 10 ELSE 0 END
-    ) STORED,
+    risk_score INTEGER DEFAULT 0,
+    risk_level VARCHAR(20) DEFAULT 'GREEN' CHECK (
+        risk_level IN ('GREEN', 'YELLOW', 'RED', 'RED_EMERGENCY')
+    ),
     
-    risk_level VARCHAR(20) GENERATED ALWAYS AS (
-        CASE 
-            WHEN (
-                0 +
-                CASE WHEN fainted_or_very_dizzy THEN 100 ELSE 0 END +
-                CASE WHEN severe_trouble_breathing THEN 100 ELSE 0 END +
-                CASE WHEN severe_confusion THEN 100 ELSE 0 END +
-                CASE WHEN extreme_heat_or_chills THEN 100 ELSE 0 END +
-                CASE WHEN temperature_zone = 'red' THEN 50 ELSE 0 END +
-                CASE WHEN oxygen_level_zone = 'red' THEN 50 ELSE 0 END +
-                CASE WHEN heart_rate_zone = 'red' THEN 50 ELSE 0 END +
-                CASE WHEN blood_pressure_zone = 'red' THEN 50 ELSE 0 END +
-                CASE WHEN thinking_level = 3 THEN 30 ELSE 0 END +
-                CASE WHEN breathing_level = 3 THEN 30 ELSE 0 END +
-                CASE WHEN energy_level = 3 THEN 30 ELSE 0 END +
-                CASE WHEN urine_appearance_level = 3 THEN 30 ELSE 0 END +
-                CASE WHEN wound_state_level = 3 THEN 30 ELSE 0 END +
-                CASE WHEN temperature_zone = 'yellow' THEN 10 ELSE 0 END +
-                CASE WHEN oxygen_level_zone = 'yellow' THEN 10 ELSE 0 END +
-                CASE WHEN heart_rate_zone = 'yellow' THEN 10 ELSE 0 END +
-                CASE WHEN blood_pressure_zone = 'yellow' THEN 10 ELSE 0 END +
-                CASE WHEN discolored_skin THEN 20 ELSE 0 END +
-                CASE WHEN pain_level >= 7 THEN 20 ELSE 0 END +
-                CASE WHEN cough_worsening = true THEN 10 ELSE 0 END +
-                CASE WHEN uti_symptoms_worsening = 'worsened' THEN 10 ELSE 0 END +
-                CASE WHEN nausea_vomiting_diarrhea THEN 10 ELSE 0 END
-            ) >= 100 THEN 'CRITICAL'
-            WHEN (
-                0 +
-                CASE WHEN fainted_or_very_dizzy THEN 100 ELSE 0 END +
-                CASE WHEN severe_trouble_breathing THEN 100 ELSE 0 END +
-                CASE WHEN severe_confusion THEN 100 ELSE 0 END +
-                CASE WHEN extreme_heat_or_chills THEN 100 ELSE 0 END +
-                CASE WHEN temperature_zone = 'red' THEN 50 ELSE 0 END +
-                CASE WHEN oxygen_level_zone = 'red' THEN 50 ELSE 0 END +
-                CASE WHEN heart_rate_zone = 'red' THEN 50 ELSE 0 END +
-                CASE WHEN blood_pressure_zone = 'red' THEN 50 ELSE 0 END +
-                CASE WHEN thinking_level = 3 THEN 30 ELSE 0 END +
-                CASE WHEN breathing_level = 3 THEN 30 ELSE 0 END +
-                CASE WHEN energy_level = 3 THEN 30 ELSE 0 END +
-                CASE WHEN urine_appearance_level = 3 THEN 30 ELSE 0 END +
-                CASE WHEN wound_state_level = 3 THEN 30 ELSE 0 END +
-                CASE WHEN temperature_zone = 'yellow' THEN 10 ELSE 0 END +
-                CASE WHEN oxygen_level_zone = 'yellow' THEN 10 ELSE 0 END +
-                CASE WHEN heart_rate_zone = 'yellow' THEN 10 ELSE 0 END +
-                CASE WHEN blood_pressure_zone = 'yellow' THEN 10 ELSE 0 END +
-                CASE WHEN discolored_skin THEN 20 ELSE 0 END +
-                CASE WHEN pain_level >= 7 THEN 20 ELSE 0 END +
-                CASE WHEN cough_worsening = true THEN 10 ELSE 0 END +
-                CASE WHEN uti_symptoms_worsening = 'worsened' THEN 10 ELSE 0 END +
-                CASE WHEN nausea_vomiting_diarrhea THEN 10 ELSE 0 END
-            ) >= 50 THEN 'HIGH'
-            WHEN (
-                0 +
-                CASE WHEN fainted_or_very_dizzy THEN 100 ELSE 0 END +
-                CASE WHEN severe_trouble_breathing THEN 100 ELSE 0 END +
-                CASE WHEN severe_confusion THEN 100 ELSE 0 END +
-                CASE WHEN extreme_heat_or_chills THEN 100 ELSE 0 END +
-                CASE WHEN temperature_zone = 'red' THEN 50 ELSE 0 END +
-                CASE WHEN oxygen_level_zone = 'red' THEN 50 ELSE 0 END +
-                CASE WHEN heart_rate_zone = 'red' THEN 50 ELSE 0 END +
-                CASE WHEN blood_pressure_zone = 'red' THEN 50 ELSE 0 END +
-                CASE WHEN thinking_level = 3 THEN 30 ELSE 0 END +
-                CASE WHEN breathing_level = 3 THEN 30 ELSE 0 END +
-                CASE WHEN energy_level = 3 THEN 30 ELSE 0 END +
-                CASE WHEN urine_appearance_level = 3 THEN 30 ELSE 0 END +
-                CASE WHEN wound_state_level = 3 THEN 30 ELSE 0 END +
-                CASE WHEN temperature_zone = 'yellow' THEN 10 ELSE 0 END +
-                CASE WHEN oxygen_level_zone = 'yellow' THEN 10 ELSE 0 END +
-                CASE WHEN heart_rate_zone = 'yellow' THEN 10 ELSE 0 END +
-                CASE WHEN blood_pressure_zone = 'yellow' THEN 10 ELSE 0 END +
-                CASE WHEN discolored_skin THEN 20 ELSE 0 END +
-                CASE WHEN pain_level >= 7 THEN 20 ELSE 0 END +
-                CASE WHEN cough_worsening = true THEN 10 ELSE 0 END +
-                CASE WHEN uti_symptoms_worsening = 'worsened' THEN 10 ELSE 0 END +
-                CASE WHEN nausea_vomiting_diarrhea THEN 10 ELSE 0 END
-            ) >= 20 THEN 'MODERATE'
-            ELSE 'LOW'
-        END
-    ) STORED,
+    -- Additional risk calculation metadata from TypeScript
+    base_score INTEGER DEFAULT 0,
+    interaction_score INTEGER DEFAULT 0,
+    critical_flags INTEGER DEFAULT 0,
+    high_risk_modifier_applied BOOLEAN DEFAULT false,
+    risk_reasoning JSONB DEFAULT '[]'::jsonb,
+    emergency_message TEXT,
     
     -- Timestamps
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
@@ -488,14 +388,18 @@ END;
 $$ LANGUAGE plpgsql STABLE;
 
 -- Function to calculate temperature zone
+-- Matches riskCalculator.ts thresholds:
+--   Green: 96.8-99.9°F
+--   Yellow: 100.0-101.4°F  
+--   Red: <96.8°F OR >101.4°F (NOTE: >=103.5°F triggers RED_EMERGENCY in app)
 CREATE OR REPLACE FUNCTION calculate_temperature_zone(temp NUMERIC)
 RETURNS zone_type AS $$
 BEGIN
     IF temp IS NULL THEN
         RETURN NULL;
-    ELSIF temp < 96.8 OR temp >= 101.5 THEN
+    ELSIF temp < 96.8 OR temp > 101.4 THEN
         RETURN 'red';
-    ELSIF temp >= 100.0 AND temp < 101.5 THEN
+    ELSIF temp >= 100.0 AND temp <= 101.4 THEN
         RETURN 'yellow';
     ELSE
         RETURN 'green';
@@ -571,6 +475,7 @@ $$ LANGUAGE plpgsql IMMUTABLE;
 -- =============================================================================
 
 -- View: Recent high-risk check-ins (filtered by authenticated user)
+-- Uses GREEN/YELLOW/RED/RED_EMERGENCY risk levels from TypeScript calculator
 CREATE OR REPLACE VIEW high_risk_checkins AS
 SELECT 
     dc.*,
@@ -579,7 +484,7 @@ SELECT
     p.is_high_risk as patient_high_risk
 FROM daily_checkins dc
 JOIN patients p ON dc.patient_id = p.patient_id
-WHERE dc.risk_level IN ('HIGH', 'CRITICAL')
+WHERE dc.risk_level IN ('RED', 'RED_EMERGENCY')
   AND p.user_id = auth.uid()
 ORDER BY dc.checkin_date DESC, dc.risk_score DESC;
 
@@ -606,9 +511,13 @@ WHERE p.user_id = auth.uid();
 COMMENT ON TABLE patients IS 'Stores patient onboarding information and chronic conditions';
 COMMENT ON TABLE daily_checkins IS 'Stores daily symptom check-ins and vital measurements';
 
-COMMENT ON COLUMN patients.is_high_risk IS 'Auto-calculated based on age, immune status, and readmission count';
-COMMENT ON COLUMN daily_checkins.risk_score IS 'Auto-calculated weighted risk score (0-400+)';
-COMMENT ON COLUMN daily_checkins.risk_level IS 'Auto-calculated risk category: LOW, MODERATE, HIGH, CRITICAL';
+COMMENT ON COLUMN patients.is_high_risk IS 'Auto-calculated by trigger based on age >65, weakened immune, or readmission count >1';
+COMMENT ON COLUMN daily_checkins.risk_score IS 'Calculated by TypeScript riskCalculator - total score including base + interaction';
+COMMENT ON COLUMN daily_checkins.risk_level IS 'Calculated by TypeScript riskCalculator: GREEN (0-29), YELLOW (30-59), RED (60+), RED_EMERGENCY (immediate danger)';
+COMMENT ON COLUMN daily_checkins.base_score IS 'Base score from individual symptoms (from riskCalculator)';
+COMMENT ON COLUMN daily_checkins.interaction_score IS 'Interaction score from sepsis pattern detection (from riskCalculator)';
+COMMENT ON COLUMN daily_checkins.critical_flags IS 'Count of red-zone vitals/organ indicators (from riskCalculator)';
+COMMENT ON COLUMN daily_checkins.risk_reasoning IS 'JSON array of reasoning strings explaining the risk calculation';
 COMMENT ON COLUMN daily_checkins.survey_terminated_early IS 'True if survey stopped due to critical symptoms';
 
 -- =============================================================================
