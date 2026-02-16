@@ -92,7 +92,7 @@ export interface RiskCalculationResult {
   riskLevel: RiskLevel;
   totalScore: number;
   baseScore: number;
-  interactionScore: number;
+  interactionScore: number; // Kept for backwards compatibility, always 0
   criticalFlags: number;
   highRiskModifierApplied: boolean;
   reasoning: string[];
@@ -140,21 +140,22 @@ function calculateZones(response: SurveyResponse): void {
   }
 
   // Blood pressure zones
+  // Focus on LOW BP (hypotension) as the primary sepsis concern
+  // High BP is less critical for sepsis detection
   if (response.blood_pressure_systolic !== undefined && response.blood_pressure_zone === undefined) {
     const bp = response.blood_pressure_systolic;
     const baseline = response.baseline_bp_systolic || 120;
-    const diff = baseline - bp;
 
-    if (bp < 90 || bp > 180) {
-      response.blood_pressure_zone = 3; // red - absolute thresholds
-    } else if (diff >= 40) {
-      response.blood_pressure_zone = 3; // red - 40+ point drop
-    } else if (diff >= 20) {
-      response.blood_pressure_zone = 2; // yellow - 20-39 point drop
-    } else if (Math.abs(diff) <= 20) {
-      response.blood_pressure_zone = 1; // green - within normal range
+    if (bp < 90) {
+      response.blood_pressure_zone = 3; // red - severe hypotension
+    } else if (bp > 180) {
+      response.blood_pressure_zone = 3; // red - hypertensive crisis
+    } else if (bp < baseline - 40) {
+      response.blood_pressure_zone = 3; // red - significant drop from baseline
+    } else if (bp < baseline - 20) {
+      response.blood_pressure_zone = 2; // yellow - moderate drop from baseline
     } else {
-      response.blood_pressure_zone = 1; // green - elevated but not critical
+      response.blood_pressure_zone = 1; // green - stable or elevated (not sepsis concern)
     }
   }
 }
@@ -308,6 +309,39 @@ function checkHardRedOverrides(response: SurveyResponse): RiskCalculationResult 
     };
   }
 
+  // Q13: Severe hypotension (BP zone 3)
+  // BP < 90 OR > 180 OR 40+ below baseline = immediate 911
+  if (response.blood_pressure_zone === 3) {
+    reasoning.push(`CRITICAL: Blood pressure ${response.blood_pressure_systolic} mmHg - severe hypotension or hypertensive crisis`);
+    return {
+      riskLevel: 'RED_EMERGENCY',
+      totalScore: 1000,
+      baseScore: 0,
+      interactionScore: 0,
+      criticalFlags: 0,
+      highRiskModifierApplied: false,
+      reasoning,
+      emergencyMessage: 'CALL 911 IMMEDIATELY - Dangerously abnormal blood pressure'
+    };
+  }
+
+  // Q22: Skin discoloration (mottling/cyanosis)
+  // This is a SERIOUS clinical sign indicating poor perfusion or hypoxia
+  // Mottling = septic shock, Cyanosis = severe hypoxia, Jaundice = liver failure
+  if (response.discolored_skin) {
+    reasoning.push('CRITICAL: Skin, lips, or nails discolored - indicates mottling, cyanosis, or jaundice');
+    return {
+      riskLevel: 'RED_EMERGENCY',
+      totalScore: 1000,
+      baseScore: 0,
+      interactionScore: 0,
+      criticalFlags: 0,
+      highRiskModifierApplied: false,
+      reasoning,
+      emergencyMessage: 'CALL 911 IMMEDIATELY - Skin discoloration indicates poor perfusion or hypoxia'
+    };
+  }
+
   return null;
 }
 
@@ -357,55 +391,112 @@ function countCriticalFlags(response: SurveyResponse): number {
 }
 
 /**
- * STEP 4: Calculate interaction scores
- * Detect sepsis patterns from combinations of symptoms
+ * STEP 4: Detect sepsis interaction patterns
+ * These patterns can escalate risk level independent of score
+ * Returns the highest risk level triggered by patterns
  */
-function calculateInteractionScore(response: SurveyResponse): { score: number; reasoning: string[] } {
-  let score = 0;
-  const reasoning: string[] = [];
+function detectSepsisPatterns(response: SurveyResponse): {
+  detectedPatterns: string[];
+  escalationLevel: RiskLevel | null;
+  escalationReason?: string;
+} {
+  const detectedPatterns: string[] = [];
+  let escalationLevel: RiskLevel | null = null;
+  let escalationReason: string | undefined;
 
-  // INTERACTION 1: Infection + vital sign abnormality (SIRS criteria)
-  // Fever + tachycardia is a classic sepsis indicator
-  if ((response.temperature_zone ?? 0) >= 2 && (response.heart_rate_zone ?? 0) >= 2) {
-    score += 20;
-    reasoning.push('Sepsis pattern: Fever with elevated heart rate (SIRS criteria)');
+  // Helper to set escalation only if higher priority
+  const setEscalation = (level: RiskLevel, reason: string) => {
+    // Priority: RED_EMERGENCY > RED > YELLOW > null
+    if (escalationLevel === 'RED_EMERGENCY') return; // Already highest
+    if (escalationLevel === 'RED' && level !== 'RED_EMERGENCY') return; // RED already set
+    escalationLevel = level;
+    escalationReason = reason;
+  };
+
+  // PATTERN 1: SEPTIC SHOCK (Moderate BP drop + altered mental status)
+  // Note: Severe hypotension (zone 3) is handled by hard RED override, so this only handles zone 2
+  const bpZone = response.blood_pressure_zone ?? 0;
+  const hasAlteredMentalStatus = response.thinking_level >= 2;
+  const hasClearInfectionContext = 
+    response.fever_chills ||
+    (response.temperature_zone ?? 0) >= 2 ||
+    response.urine_appearance_level >= 2 ||
+    response.wound_state_level === 3 ||
+    (response.has_cough && response.cough_worsening);
+
+  if (bpZone === 2 && hasAlteredMentalStatus) {
+    // Moderate BP drop (zone 2) + confusion + infection context = likely septic shock → RED_EMERGENCY
+    if (hasClearInfectionContext) {
+      detectedPatterns.push('Septic shock pattern: Blood pressure drop with altered mental status and infection signs');
+      setEscalation('RED_EMERGENCY', 'CALL 911 IMMEDIATELY - Signs of septic shock (hypotension with confusion and infection)');
+      return { detectedPatterns, escalationLevel, escalationReason };
+    }
+    // Moderate BP drop (zone 2) + confusion WITHOUT infection = could be dehydration/meds → RED (urgent, not 911)
+    else {
+      detectedPatterns.push('Hypotension with confusion: Blood pressure drop with altered mental status (no clear infection)');
+      setEscalation('RED', 'Seek immediate medical attention - blood pressure drop with confusion requires evaluation');
+      // Don't return - continue checking other patterns
+    }
   }
 
-  // INTERACTION 2: Oxygen + breathing
-  // Respiratory distress with hypoxia
+  // PATTERN 2: RESPIRATORY FAILURE (Low O₂ + breathing difficulty)
   if ((response.oxygen_level_zone ?? 0) >= 2 && response.breathing_level >= 2) {
-    score += 20;
-    reasoning.push('Respiratory sepsis pattern: Low oxygen with breathing difficulty');
+    detectedPatterns.push('Respiratory failure pattern: Low oxygen with breathing difficulty');
+    setEscalation('RED', 'Respiratory distress pattern detected - seek immediate medical attention');
   }
 
-  // INTERACTION 3: BP drop + mental change (septic shock)
-  // Hypotension with altered mental status = brain hypoperfusion
-  if ((response.blood_pressure_zone ?? 0) >= 2 && response.thinking_level >= 2) {
-    score += 25;
-    reasoning.push('Septic shock pattern: Low blood pressure with altered mental status');
+  // PATTERN 3: SILENT HYPOXIA (Low O₂ + extreme fatigue)
+  if ((response.oxygen_level_zone ?? 0) >= 2 && response.energy_level === 3) {
+    detectedPatterns.push('Silent hypoxia pattern: Low oxygen with extreme fatigue');
+    setEscalation('RED', 'Silent hypoxia detected - seek immediate medical attention');
   }
 
-  // INTERACTION 4: Infection + organ dysfunction
-  // UTI symptoms with fever suggests urosepsis
+  // PATTERN 4: SEPTIC ENCEPHALOPATHY (Fever + altered thinking)
+  if (response.fever_chills && response.thinking_level >= 2) {
+    detectedPatterns.push('Septic encephalopathy pattern: Fever with altered mental status');
+    setEscalation('RED', 'Brain function affected by infection - seek immediate medical attention');
+  }
+
+  // PATTERN 5: COMPENSATED SHOCK (Low BP + tachycardia)
+  // Heart racing to compensate for falling blood pressure
+  // NOTE: Only trigger for HYPOTENSION, not hypertensive crisis (>180)
+  const bpIsLow = response.blood_pressure_systolic !== undefined && 
+    response.blood_pressure_systolic <= (response.baseline_bp_systolic || 120);
+  if (bpZone >= 2 && bpIsLow && (response.heart_rate_zone ?? 0) >= 2) {
+    detectedPatterns.push('Compensated shock pattern: Low blood pressure with elevated heart rate');
+    setEscalation('RED', 'Pre-shock state detected - seek immediate medical attention');
+  }
+
+  // PATTERN 6: SEPTIC HYPOTHERMIA (Temp < 96.8°F)
+  if (response.temperature_value !== undefined && response.temperature_value < 96.8) {
+    detectedPatterns.push(`Hypothermia: ${response.temperature_value}°F - severe sepsis indicator`);
+    setEscalation('RED', 'Hypothermia in infection setting - seek immediate medical attention');
+  }
+
+  // PATTERN 7: SIRS CRITERIA (Fever + tachycardia)
+  if ((response.temperature_zone ?? 0) >= 2 && (response.heart_rate_zone ?? 0) >= 2) {
+    detectedPatterns.push('SIRS criteria met: Fever with elevated heart rate');
+    setEscalation('YELLOW', 'Systemic infection signs detected - contact your provider today');
+  }
+
+  // PATTERN 8: UROSEPSIS (Fever + abnormal urine)
   if (response.fever_chills && response.urine_appearance_level >= 2) {
-    score += 15;
-    reasoning.push('Urosepsis pattern: Fever with abnormal urine');
+    detectedPatterns.push('Urosepsis pattern: Fever with abnormal urine');
+    setEscalation('YELLOW', 'Urinary tract infection with systemic symptoms - contact your provider today');
   }
 
-  // INTERACTION 5: Fatigue + vitals
-  // Extreme fatigue with cardiovascular stress
-  if (response.energy_level === 3 && 
-      ((response.heart_rate_zone ?? 0) >= 2 || (response.oxygen_level_zone ?? 0) >= 2)) {
-    score += 20;
-    reasoning.push('Systemic infection pattern: Extreme fatigue with vital sign abnormalities');
+  // PATTERN 9: CARDIOVASCULAR DECOMPENSATION (Extreme fatigue + tachycardia)
+  if (response.energy_level === 3 && (response.heart_rate_zone ?? 0) >= 2) {
+    detectedPatterns.push('Cardiovascular stress: Extreme fatigue with elevated heart rate');
+    setEscalation('YELLOW', 'Cardiovascular strain detected - contact your provider today');
   }
 
-  return { score, reasoning };
+  return { detectedPatterns, escalationLevel, escalationReason };
 }
 
 /**
  * STEP 5: Calculate base score
- * Individual symptom contributions with reduced weights for weak signals
+ * Individual symptom contributions - NO CAPS, straightforward scoring
  */
 function calculateBaseScore(response: SurveyResponse): { score: number; reasoning: string[] } {
   let score = 0;
@@ -426,7 +517,7 @@ function calculateBaseScore(response: SurveyResponse): { score: number; reasonin
     reasoning.push('Subjective fever without measurement (+10)');
   }
 
-  // Q9: TEMPERATURE (objective)
+  // Q9: TEMPERATURE
   if (response.temperature_zone === 2) {
     score += 15;
     reasoning.push(`Temperature ${response.temperature_value}°F - yellow zone (+15)`);
@@ -447,10 +538,10 @@ function calculateBaseScore(response: SurveyResponse): { score: number; reasonin
   // Q11: HEART RACING (subjective, only if no monitor)
   if (response.heart_racing && !response.has_hr_monitor) {
     score += 5;
-    reasoning.push('Subjective heart racing without measurement (+5)');
+    reasoning.push('Subjective heart racing (+5)');
   }
 
-  // Q12: HEART RATE (objective)
+  // Q12: HEART RATE
   if (response.heart_rate_zone === 2) {
     score += 8;
     reasoning.push(`Heart rate ${response.heart_rate_value} bpm - yellow zone (+8)`);
@@ -471,27 +562,25 @@ function calculateBaseScore(response: SurveyResponse): { score: number; reasonin
   // Q14: THINKING CLARITY
   if (response.thinking_level === 2) {
     score += 8;
-    reasoning.push('Thinking feels slow or not quite right (+8)');
+    reasoning.push('Thinking slow or not quite right (+8)');
   }
-  // Level 3 caught by emergency override, won't reach here
 
   // Q15: BREATHING STATUS
   if (response.breathing_level === 2) {
     score += 8;
-    reasoning.push('Breathing slightly more difficult or faster than usual (+8)');
+    reasoning.push('Breathing slightly more difficult (+8)');
   }
-  // Level 3 caught by emergency override, won't reach here
 
   // Q16: URINE APPEARANCE
   if (response.urine_appearance_level === 2) {
     score += 15;
-    reasoning.push('Urine is cloudy, dark, or smelly (+15)');
+    reasoning.push('Urine cloudy, dark, or smelly (+15)');
   } else if (response.urine_appearance_level === 3) {
     score += 40;
-    reasoning.push('Urine is very dark, brown/tea-colored, red, or significantly different (+40)');
+    reasoning.push('Urine very dark, bloody, or significantly different (+40)');
   }
 
-  // Q17: UTI SYMPTOMS PROGRESSION
+  // Q17: UTI SYMPTOMS
   if (response.uti_symptoms_worsening === 'same' && response.has_recent_uti) {
     score += 10;
     reasoning.push('UTI symptoms unchanged (+10)');
@@ -506,16 +595,16 @@ function calculateBaseScore(response: SurveyResponse): { score: number; reasonin
     reasoning.push('Urine output less than usual (+8)');
   } else if (response.urine_output_level === 3) {
     score += 40;
-    reasoning.push('Urine output little to none - oliguria (+40)');
+    reasoning.push('Urine output little to none (+40)');
   }
 
-  // Q19: COUGH/MUCUS
+  // Q19: COUGH
   if (response.has_cough) {
     score += 3;
-    reasoning.push('Cough or non-clear mucus present (+3)');
+    reasoning.push('Cough or mucus present (+3)');
   }
 
-  // Q20: PNEUMONIA PROGRESSION
+  // Q20: PNEUMONIA WORSENING
   if (response.cough_worsening) {
     score += 5;
     reasoning.push('Pneumonia symptoms worsening (+5)');
@@ -524,22 +613,16 @@ function calculateBaseScore(response: SurveyResponse): { score: number; reasonin
   // Q21: WOUND STATUS
   if (response.wound_state_level === 2) {
     score += 10;
-    reasoning.push('Wound looks different than usual (+10)');
+    reasoning.push('Wound looks different (+10)');
   } else if (response.wound_state_level === 3) {
     score += 40;
-    reasoning.push('Wound shows infection signs: painful, red, smells, pus, or swollen (+40)');
-  }
-
-  // Q22: SKIN DISCOLORATION
-  if (response.discolored_skin) {
-    score += 30;
-    reasoning.push('Skin, lips, or nails discolored - possible mottling/cyanosis (+30)');
+    reasoning.push('Wound infected: red, pus, or swollen (+40)');
   }
 
   // Q23: GI SYMPTOMS
   if (response.nausea_vomiting_diarrhea) {
     score += 5;
-    reasoning.push('GI symptoms: nausea, vomiting, or diarrhea (+5)');
+    reasoning.push('GI symptoms present (+5)');
   }
 
   return { score, reasoning };
@@ -557,45 +640,76 @@ function isHighRiskPatient(response: SurveyResponse): boolean {
 }
 
 /**
- * STEP 7: Determine final risk level with thresholds and overrides
+ * STEP 7: Determine final risk level
+ * Combines score-based thresholds AND pattern-based escalations
+ * Patterns can only INCREASE risk, never decrease
  */
 function determineFinalRiskLevel(
   baseScore: number,
-  interactionScore: number,
   criticalFlags: number,
-  highRiskModifier: boolean
-): RiskLevel {
-  // Apply high-risk multiplier
-  let totalScore = baseScore + interactionScore;
+  highRiskModifier: boolean,
+  patternEscalation: RiskLevel | null
+): { riskLevel: RiskLevel; triggerReason: string } {
+  
+  // Calculate total score with high-risk modifier
+  let totalScore = baseScore;
   if (highRiskModifier) {
-    totalScore *= 1.25;
+    totalScore = Math.round(totalScore * 1.25);
   }
 
-  // OVERRIDE 1: Multiple critical flags = RED
+  // Determine score-based risk level
+  let scoreBasedLevel: RiskLevel = 'GREEN';
+  let scoreTrigger = '';
+
+  // PRIORITY 1: ORGAN FAILURE (≥2 critical flags)
   if (criticalFlags >= 2) {
-    return 'RED';
+    scoreBasedLevel = 'RED';
+    scoreTrigger = 'Multiple organ systems in red zone';
   }
-
-  // OVERRIDE 2: High interaction score = RED
-  // (Strong sepsis pattern detected)
-  if (interactionScore >= 40) {
-    return 'RED';
+  // PRIORITY 2: HIGH SCORE THRESHOLDS
+  else if (totalScore >= 60) {
+    scoreBasedLevel = 'RED';
+    scoreTrigger = 'High sepsis risk score';
   }
-
-  // STANDARD THRESHOLDS
-  if (totalScore >= 60) {
-    return 'RED';
+  else if (totalScore >= 30 && criticalFlags >= 1) {
+    scoreBasedLevel = 'RED';
+    scoreTrigger = 'Critical vital sign with concerning symptoms';
   }
+  else if (totalScore >= 30) {
+    scoreBasedLevel = 'YELLOW';
+    scoreTrigger = 'Moderate symptoms requiring evaluation';
+  }
+  // CRITICAL FLAG SAFETY NET: Never allow GREEN when any organ system is in critical zone
+  else if (criticalFlags >= 1) {
+    scoreBasedLevel = 'YELLOW';
+    scoreTrigger = 'At least one vital sign or organ system in critical zone';
+  }
+  // else: GREEN
 
-  if (totalScore >= 30) {
-    // OVERRIDE 3: Yellow with 1 critical flag = RED
-    if (criticalFlags >= 1) {
-      return 'RED';
+  // Now ESCALATE based on patterns (patterns can only increase risk, not decrease)
+  let finalLevel: RiskLevel = scoreBasedLevel;
+  let finalTrigger = scoreTrigger;
+
+  if (patternEscalation) {
+    // RED_EMERGENCY always wins
+    if (patternEscalation === 'RED_EMERGENCY') {
+      finalLevel = 'RED_EMERGENCY';
+      finalTrigger = 'Septic shock pattern detected';
     }
-    return 'YELLOW';
+    // RED escalates from YELLOW or GREEN
+    else if (patternEscalation === 'RED' && (scoreBasedLevel === 'YELLOW' || scoreBasedLevel === 'GREEN')) {
+      finalLevel = 'RED';
+      finalTrigger = 'Dangerous sepsis pattern detected';
+    }
+    // YELLOW escalates from GREEN
+    else if (patternEscalation === 'YELLOW' && scoreBasedLevel === 'GREEN') {
+      finalLevel = 'YELLOW';
+      finalTrigger = 'Infection pattern detected';
+    }
+    // If score is already higher than pattern, keep score-based level
   }
 
-  return 'GREEN';
+  return { riskLevel: finalLevel, triggerReason: finalTrigger };
 }
 
 /**
@@ -607,63 +721,91 @@ export function calculateSepsisRisk(response: SurveyResponse): RiskCalculationRe
   // Ensure zones are calculated
   calculateZones(response);
 
-  // STEP 1: Emergency conditions
+  // STEP 1: Emergency conditions (Q1-Q4)
   const emergency = checkEmergencyConditions(response);
   if (emergency) return emergency;
 
-  // STEP 2: Hard RED overrides
+  // STEP 2: Hard RED overrides (critical thresholds)
   const hardRed = checkHardRedOverrides(response);
   if (hardRed) return hardRed;
 
   // STEP 3: Count critical flags
   const criticalFlags = countCriticalFlags(response);
   if (criticalFlags > 0) {
-    allReasoning.push(`Critical flags detected: ${criticalFlags} vital sign(s) or organ system(s) in red zone`);
+    allReasoning.push(`⚠️ ${criticalFlags} vital sign(s) or organ system(s) in critical zone`);
   }
 
-  // STEP 4: Calculate interaction score
-  const interactionResult = calculateInteractionScore(response);
-  if (interactionResult.score > 0) {
-    allReasoning.push(...interactionResult.reasoning);
+  // STEP 4: Detect sepsis patterns (INDEPENDENT of scoring)
+  const patternResult = detectSepsisPatterns(response);
+  if (patternResult.detectedPatterns.length > 0) {
+    allReasoning.push('');
+    allReasoning.push('🔍 Clinical Patterns Detected:');
+    allReasoning.push(...patternResult.detectedPatterns.map(p => `  • ${p}`));
   }
 
-  // STEP 5: Calculate base score
+  // If pattern triggers RED_EMERGENCY, return immediately
+  if (patternResult.escalationLevel === 'RED_EMERGENCY') {
+    return {
+      riskLevel: 'RED_EMERGENCY',
+      totalScore: 1000,
+      baseScore: 0,
+      interactionScore: 0,
+      criticalFlags,
+      highRiskModifierApplied: false,
+      reasoning: allReasoning,
+      emergencyMessage: patternResult.escalationReason
+    };
+  }
+
+  // STEP 5: Calculate base score (no caps)
   const baseResult = calculateBaseScore(response);
-  allReasoning.push(...baseResult.reasoning);
+  
+  if (baseResult.reasoning.length > 0) {
+    allReasoning.push('');
+    allReasoning.push('📊 Individual Symptoms:');
+    allReasoning.push(...baseResult.reasoning.map(r => `  • ${r}`));
+  }
 
   // STEP 6: High-risk modifier
   const highRiskModifier = isHighRiskPatient(response);
   if (highRiskModifier) {
-    allReasoning.push('High-risk patient modifier applied: 25% score increase');
+    allReasoning.push('');
+    allReasoning.push('👤 High-risk patient: 25% score increase applied');
   }
 
-  // Calculate raw scores
-  let baseScore = baseResult.score;
-  let interactionScore = interactionResult.score;
-  let totalScore = baseScore + interactionScore;
-
-  // Apply multiplier
+  // Calculate total score
+  const baseScore = baseResult.score;
+  let totalScore = baseScore;
   if (highRiskModifier) {
     totalScore = Math.round(totalScore * 1.25);
   }
 
+  allReasoning.push('');
+  allReasoning.push(`📈 Total Score: ${totalScore} (Base: ${baseScore}${highRiskModifier ? ' × 1.25' : ''})`);
+
   // STEP 7: Determine final risk level
-  const riskLevel = determineFinalRiskLevel(baseScore, interactionScore, criticalFlags, highRiskModifier);
+  const { riskLevel, triggerReason } = determineFinalRiskLevel(
+    baseScore,
+    criticalFlags,
+    highRiskModifier,
+    patternResult.escalationLevel
+  );
 
-  // Add final reasoning
-  allReasoning.push(`Base score: ${baseScore}, Interaction score: ${interactionScore}, Total: ${totalScore}`);
-
-  // Determine emergency message if applicable
+  // Determine emergency message
   let emergencyMessage: string | undefined;
   if (riskLevel === 'RED') {
-    if (criticalFlags >= 2) {
+    if (patternResult.escalationLevel === 'RED') {
+      emergencyMessage = patternResult.escalationReason;
+    } else if (criticalFlags >= 2) {
       emergencyMessage = 'SEEK IMMEDIATE MEDICAL ATTENTION - Multiple critical vital signs detected';
-    } else if (interactionScore >= 40) {
-      emergencyMessage = 'SEEK IMMEDIATE MEDICAL ATTENTION - Strong sepsis pattern detected';
-    } else if (criticalFlags === 1 && totalScore >= 30) {
-      emergencyMessage = 'SEEK IMMEDIATE MEDICAL ATTENTION - Critical vital sign with concerning symptoms';
     } else {
-      emergencyMessage = 'SEEK IMMEDIATE MEDICAL ATTENTION - High sepsis risk score';
+      emergencyMessage = 'SEEK IMMEDIATE MEDICAL ATTENTION - High sepsis risk';
+    }
+  } else if (riskLevel === 'YELLOW') {
+    if (patternResult.escalationLevel === 'YELLOW') {
+      emergencyMessage = patternResult.escalationReason;
+    } else {
+      emergencyMessage = 'Contact your healthcare provider today for evaluation';
     }
   }
 
@@ -671,7 +813,7 @@ export function calculateSepsisRisk(response: SurveyResponse): RiskCalculationRe
     riskLevel,
     totalScore,
     baseScore,
-    interactionScore,
+    interactionScore: 0, // No longer used, kept for backwards compatibility
     criticalFlags,
     highRiskModifierApplied: highRiskModifier,
     reasoning: allReasoning,
