@@ -84,8 +84,8 @@ export interface SurveyResponse {
 
   // PATIENT CONTEXT
   age?: number;
-  weakened_immune: boolean;
-  readmission_count: number;
+  has_weakened_immune: boolean;
+  admitted_count: number;
 }
 
 export interface RiskCalculationResult {
@@ -634,8 +634,8 @@ function calculateBaseScore(response: SurveyResponse): { score: number; reasonin
 function isHighRiskPatient(response: SurveyResponse): boolean {
   return (
     (response.age !== undefined && response.age >= 65) ||
-    response.weakened_immune ||
-    response.readmission_count >= 1
+    response.has_weakened_immune ||
+    response.admitted_count > 1
   );
 }
 
