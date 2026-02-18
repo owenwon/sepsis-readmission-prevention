@@ -1,17 +1,11 @@
-// lib/questions/onboarding.ts
-
 import { Question, QuestionSection, Survey } from './types';
 
-/**
- * ONBOARDING SURVEY
- * Total: 20 questions
- * Collects patient information, medical history, and device access
- */
-
 export const onboardingQuestions: Question[] = [
+
   // ============================================================================
-  // QUESTION 1: User Type
+  // GETTING STARTED (Question 1)
   // ============================================================================
+
   {
     id: 'user_type',
     section: 'Getting Started',
@@ -25,7 +19,6 @@ export const onboardingQuestions: Question[] = [
     schemaField: ['is_patient', 'is_caregiver'],
     validation: { required: true },
     businessLogic: {
-      description: 'Determines user mode for entire application',
       mapToMultipleFields: true,
       customMapping: (value: string) => ({
         is_patient: value === 'patient',
@@ -35,13 +28,14 @@ export const onboardingQuestions: Question[] = [
   },
 
   // ============================================================================
-  // QUESTION 2: Patient Name
+  // BASIC INFORMATION (Questions 2-4)
   // ============================================================================
+
   {
     id: 'patient_name',
     section: 'Basic Information',
     patientText: 'What is your name?',
-    caregiverText: 'What is the patient\'s name?',
+    caregiverText: "What is the patient's name?",
     type: 'text',
     schemaField: 'patient_name',
     validation: {
@@ -52,31 +46,34 @@ export const onboardingQuestions: Question[] = [
     placeholder: 'Enter full name',
   },
 
-  // ============================================================================
-  // QUESTION 3: Birthday
-  // ============================================================================
   {
     id: 'birthday',
     section: 'Basic Information',
     patientText: 'What is your birthday?',
-    caregiverText: 'What is the patient\'s birthday?',
+    caregiverText: "What is the patient's birthday?",
     type: 'date',
-    schemaField: 'birthday',
+    schemaField: ['birthday', 'age'],
     validation: { required: true },
     businessLogic: {
-      description: 'Age > 65 triggers high-risk flag',
-      autoFlags: ['age', 'is_high_risk'],
+      mapToMultipleFields: true,
+      customMapping: (value: string) => {
+        const birthDate = new Date(value);
+        const today = new Date();
+        let age = today.getFullYear() - birthDate.getFullYear();
+        const monthDiff = today.getMonth() - birthDate.getMonth();
+        if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birthDate.getDate())) {
+          age--;
+        }
+        return { birthday: value, age };
+      },
     },
   },
 
-  // ============================================================================
-  // QUESTION 4: Sex Assigned at Birth
-  // ============================================================================
   {
     id: 'sex_assigned_at_birth',
     section: 'Basic Information',
     patientText: 'What was your sex assigned at birth?',
-    caregiverText: 'What was the patient\'s sex assigned at birth?',
+    caregiverText: "What was the patient's sex assigned at birth?",
     type: 'single_select',
     options: [
       { label: 'Male', value: 'male' },
@@ -89,8 +86,9 @@ export const onboardingQuestions: Question[] = [
   },
 
   // ============================================================================
-  // QUESTION 5: Current Hospitalization Status
+  // SEPSIS CONTEXT (Questions 5-7)
   // ============================================================================
+
   {
     id: 'currently_hospitalized',
     section: 'Sepsis Context',
@@ -98,31 +96,28 @@ export const onboardingQuestions: Question[] = [
     caregiverText: 'Is the patient currently hospitalized for sepsis?',
     type: 'boolean',
     schemaField: 'currently_hospitalized',
-    helpText: 'If yes, this tool is designed for post-discharge monitoring. Please consult with your healthcare team for in-hospital care.',
+    helpText:
+      'If yes, this tool is designed for post-discharge monitoring. Please consult with your healthcare team for in-hospital care.',
     validation: { required: true },
   },
 
-  // ============================================================================
-  // QUESTION 6: Time Since Last Discharge
-  // ============================================================================
   {
     id: 'days_since_last_discharge',
     section: 'Sepsis Context',
     patientText: 'If not currently hospitalized, how long ago was your last sepsis-related admission?',
-    caregiverText: 'If not currently hospitalized, how long ago was the patient\'s last sepsis-related admission?',
+    caregiverText: "If not currently hospitalized, how long ago was the patient's last sepsis-related admission?",
     type: 'single_select',
     options: [
-      { label: 'Less than 7 days ago', value: '3' }, // Midpoint: 3 days
-      { label: '1–4 weeks ago', value: '17' }, // Midpoint: ~17 days
-      { label: '1–3 months ago', value: '60' }, // Midpoint: ~60 days
-      { label: 'More than 3 months ago', value: '120' }, // ~4 months
+      { label: 'Less than 7 days ago', value: '3' },
+      { label: '1-4 weeks ago', value: '17' },
+      { label: '1-3 months ago', value: '60' },
+      { label: 'More than 3 months ago', value: '120' },
     ],
     schemaField: ['days_since_last_discharge', 'sepsis_status'],
     prerequisites: [
       { field: 'currently_hospitalized', operator: '==', value: false },
     ],
     businessLogic: {
-      description: 'If ≤30 days, increase risk stratification',
       mapToMultipleFields: true,
       customMapping: (value: string) => ({
         days_since_last_discharge: parseInt(value),
@@ -131,11 +126,8 @@ export const onboardingQuestions: Question[] = [
     },
   },
 
-  // ============================================================================
-  // QUESTION 7: Number of Sepsis Hospitalizations
-  // ============================================================================
   {
-    id: 'readmitted_count',
+    id: 'admitted_count',
     section: 'Sepsis Context',
     patientText: 'How many total times have you been hospitalized for sepsis?',
     caregiverText: 'How many total times has the patient been hospitalized for sepsis?',
@@ -145,21 +137,21 @@ export const onboardingQuestions: Question[] = [
       { label: '2 times', value: 2 },
       { label: '3 or more times', value: 3 },
     ],
-    schemaField: ['readmitted_count', 'sepsis_status'],
+    schemaField: ['admitted_count', 'sepsis_status'],
     validation: { required: true },
     businessLogic: {
-      description: 'If > 1, set sepsis_status to readmitted',
       mapToMultipleFields: true,
       customMapping: (value: number) => ({
-        readmitted_count: value,
+        admitted_count: value,
         sepsis_status: value > 1 ? 'readmitted' : undefined,
       }),
     },
   },
 
   // ============================================================================
-  // QUESTION 8: Chronic Medical Conditions
+  // MEDICAL HISTORY (Questions 8-10, 20)
   // ============================================================================
+
   {
     id: 'chronic_conditions',
     section: 'Medical History',
@@ -191,7 +183,6 @@ export const onboardingQuestions: Question[] = [
       'chronic_conditions_other',
     ],
     businessLogic: {
-      description: 'Maps multi-select to individual boolean fields',
       mapToMultipleFields: true,
       customMapping: (values: string[]) => ({
         has_asthma: values.includes('asthma'),
@@ -200,14 +191,11 @@ export const onboardingQuestions: Question[] = [
         has_heart_disease: values.includes('heart_disease'),
         has_kidney_disease: values.includes('kidney_disease'),
         has_weakened_immune: values.includes('weakened_immune'),
-        chronic_conditions_other: values.includes('other') ? '' : null, // Will be filled by "other" input
+        chronic_conditions_other: values.includes('other') ? '' : null,
       }),
     },
   },
 
-  // ============================================================================
-  // QUESTION 9: Recent/Active Illnesses
-  // ============================================================================
   {
     id: 'recent_illnesses',
     section: 'Medical History',
@@ -228,20 +216,16 @@ export const onboardingQuestions: Question[] = [
       'has_kidney_failure',
     ],
     businessLogic: {
-      description: 'Gates specific symptom questions in daily check-ins',
       mapToMultipleFields: true,
       customMapping: (values: string[]) => ({
         has_recent_uti: values.includes('uti'),
         has_recent_pneumonia: values.includes('pneumonia'),
         has_dialysis: values.includes('dialysis'),
-        has_kidney_failure: values.includes('dialysis'), // Dialysis implies kidney failure
+        has_kidney_failure: values.includes('dialysis'), // dialysis implies kidney failure
       }),
     },
   },
 
-  // ============================================================================
-  // QUESTION 10: Current Medications
-  // ============================================================================
   {
     id: 'current_medications',
     section: 'Medical History',
@@ -256,7 +240,6 @@ export const onboardingQuestions: Question[] = [
       'on_steroids',
     ],
     businessLogic: {
-      description: 'Auto-flag medication categories based on keywords',
       mapToMultipleFields: true,
       customMapping: (medications: string[]) => {
         const immunosuppressants = [
@@ -299,27 +282,31 @@ export const onboardingQuestions: Question[] = [
     },
   },
 
+  {
+    id: 'has_active_wound',
+    section: 'Medical History',
+    patientText: 'Do you have an active wound (surgical or non-surgical)?',
+    caregiverText: 'Does the patient have an active wound (surgical or non-surgical)?',
+    type: 'boolean',
+    schemaField: 'has_active_wound',
+  },
+
   // ============================================================================
-  // QUESTION 11: Caregiver Availability
+  // CARE & SUPPORT (Questions 11-14)
   // ============================================================================
+
   {
     id: 'has_caregiver',
     section: 'Care & Support',
     patientText: 'Do you have a caregiver to assist you?',
-    caregiverText: null, // Skip for caregivers - auto-set to true
+    caregiverText: null, // Skip for caregivers — auto-set to true
     type: 'boolean',
     schemaField: 'has_caregiver',
     prerequisites: [
       { field: 'is_patient', operator: '==', value: true },
     ],
-    businessLogic: {
-      description: 'Auto-set to true if user is caregiver',
-    },
   },
 
-  // ============================================================================
-  // QUESTION 12: Caregiver Availability Details
-  // ============================================================================
   {
     id: 'caregiver_availability',
     section: 'Care & Support',
@@ -338,14 +325,11 @@ export const onboardingQuestions: Question[] = [
     ],
   },
 
-  // ============================================================================
-  // QUESTION 13: Physical Ability
-  // ============================================================================
   {
     id: 'physical_ability',
     section: 'Care & Support',
-    patientText: 'Which best describes your current physical ability?',
-    caregiverText: 'Which best describes the patient\'s current physical ability?',
+    patientText: "Which best describes your current physical ability?",
+    caregiverText: "Which best describes the patient's current physical ability?",
     type: 'single_select',
     options: [
       { label: 'Normal activity and stairs without difficulty', value: 'normal' },
@@ -356,7 +340,6 @@ export const onboardingQuestions: Question[] = [
     schemaField: ['physical_ability_level', 'can_exercise_regularly'],
     validation: { required: true },
     businessLogic: {
-      description: 'Map to can_exercise_regularly boolean',
       mapToMultipleFields: true,
       customMapping: (value: string) => ({
         physical_ability_level: value,
@@ -365,9 +348,6 @@ export const onboardingQuestions: Question[] = [
     },
   },
 
-  // ============================================================================
-  // QUESTION 14: Social Support
-  // ============================================================================
   {
     id: 'social_support',
     section: 'Care & Support',
@@ -380,65 +360,49 @@ export const onboardingQuestions: Question[] = [
       { label: 'No regular support', value: false },
     ],
     schemaField: 'has_social_support',
-    businessLogic: {
-      description: 'Both "daily" and "occasionally" map to true',
-    },
   },
 
   // ============================================================================
-  // QUESTION 15: Thermometer Access
+  // MONITORING DEVICES (Questions 15-19)
   // ============================================================================
+
   {
     id: 'has_thermometer',
     section: 'Monitoring Devices',
     patientText: 'Are you able to check your temperature (thermometer) at home each day if needed?',
-    caregiverText: 'Are you able to check the patient\'s temperature (thermometer) at home each day if needed?',
+    caregiverText: "Are you able to check the patient's temperature (thermometer) at home each day if needed?",
     type: 'boolean',
     schemaField: 'has_thermometer',
-    businessLogic: {
-      description: 'Gates temperature input in daily check-ins',
-    },
   },
 
-  // ============================================================================
-  // QUESTION 16: Pulse Oximeter Access
-  // ============================================================================
   {
     id: 'has_pulse_oximeter',
     section: 'Monitoring Devices',
     patientText: 'Are you able to check your oxygen level (pulse oximeter) at home each day if needed?',
-    caregiverText: 'Are you able to check the patient\'s oxygen level (pulse oximeter) at home each day if needed?',
+    caregiverText: "Are you able to check the patient's oxygen level (pulse oximeter) at home each day if needed?",
     type: 'boolean',
     schemaField: 'has_pulse_oximeter',
-    businessLogic: {
-      description: 'Gates oxygen level input in daily check-ins',
-    },
   },
 
-  // ============================================================================
-  // QUESTION 17: Blood Pressure Cuff Access
-  // ============================================================================
   {
     id: 'has_bp_cuff',
     section: 'Monitoring Devices',
     patientText: 'Are you able to check your blood pressure (blood pressure cuff) at home each day if needed?',
-    caregiverText: 'Are you able to check the patient\'s blood pressure (blood pressure cuff) at home each day if needed?',
+    caregiverText: "Are you able to check the patient's blood pressure (blood pressure cuff) at home each day if needed?",
     type: 'boolean',
     schemaField: 'has_bp_cuff',
     businessLogic: {
-      description: 'Gates blood pressure input in daily check-ins',
       triggersFollowUp: 'baseline_bp_systolic',
     },
   },
 
-  // ============================================================================
-  // QUESTION 18: Baseline Blood Pressure
-  // ============================================================================
   {
     id: 'baseline_bp_systolic',
     section: 'Monitoring Devices',
-    patientText: 'If possible, please measure your blood pressure after resting for 3 minutes, or enter your usual value if you know it. This will be saved as your baseline.',
-    caregiverText: 'If possible, please measure the patient\'s blood pressure after resting for 3 minutes, or enter their usual value if you know it. This will be saved as their baseline.',
+    patientText:
+      'If possible, please measure your blood pressure after resting for 3 minutes, or enter your usual value if you know it. This will be saved as your baseline.',
+    caregiverText:
+      "If possible, please measure the patient's blood pressure after resting for 3 minutes, or enter their usual value if you know it. This will be saved as their baseline.",
     helpText: 'Enter the top number (systolic)',
     type: 'integer',
     schemaField: 'baseline_bp_systolic',
@@ -451,45 +415,21 @@ export const onboardingQuestions: Question[] = [
     },
     placeholder: 'e.g., 120',
     unit: 'mmHg',
-    businessLogic: {
-      description: 'Used as reference for blood pressure zone calculation in daily check-ins',
-    },
   },
 
-  // ============================================================================
-  // QUESTION 19: Heart Rate Monitor Access
-  // ============================================================================
   {
     id: 'has_hr_monitor',
     section: 'Monitoring Devices',
-    patientText: 'Are you able to check your heart rate at home each day if needed? (Some pulse oximeters and blood pressure cuffs measure this.)',
-    caregiverText: 'Are you able to check the patient\'s heart rate at home each day if needed? (Some pulse oximeters and blood pressure cuffs measure this.)',
+    patientText:
+      'Are you able to check your heart rate at home each day if needed? (Some pulse oximeters and blood pressure cuffs measure this.)',
+    caregiverText:
+      "Are you able to check the patient's heart rate at home each day if needed? (Some pulse oximeters and blood pressure cuffs measure this.)",
     type: 'boolean',
     schemaField: 'has_hr_monitor',
-    businessLogic: {
-      description: 'Gates heart rate input in daily check-ins',
-    },
   },
 
-  // ============================================================================
-  // QUESTION 20: Active Wound
-  // ============================================================================
-  {
-    id: 'has_active_wound',
-    section: 'Medical History',
-    patientText: 'Do you have an active wound (surgical or non-surgical)?',
-    caregiverText: 'Does the patient have an active wound (surgical or non-surgical)?',
-    type: 'boolean',
-    schemaField: 'has_active_wound',
-    businessLogic: {
-      description: 'Gates wound status question in daily check-ins',
-    },
-  },
 ];
 
-/**
- * Organized into sections for better UX
- */
 export const onboardingSections: QuestionSection[] = [
   {
     id: 'getting_started',
@@ -529,9 +469,6 @@ export const onboardingSections: QuestionSection[] = [
   },
 ];
 
-/**
- * Complete onboarding survey
- */
 export const onboardingSurvey: Survey = {
   id: 'onboarding',
   title: 'Sepsis Monitoring - Onboarding',
@@ -540,16 +477,10 @@ export const onboardingSurvey: Survey = {
   questions: onboardingQuestions,
 };
 
-/**
- * Helper to get question by ID
- */
 export function getOnboardingQuestion(id: string): Question | undefined {
   return onboardingQuestions.find((q) => q.id === id);
 }
 
-/**
- * Helper to get all questions for a section
- */
 export function getOnboardingSection(sectionId: string): QuestionSection | undefined {
   return onboardingSections.find((s) => s.id === sectionId);
 }
