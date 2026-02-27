@@ -81,6 +81,7 @@ export interface Question {
   patientText: string;                  // Question text for patient mode
   caregiverText: string | null;         // Question text for caregiver mode (null = skip for caregivers)
   helpText?: string;                    // Additional help/explanation text
+  caregiverHelpText?: string;           // Additional help text for caregivers
   
   // Question configuration
   type: QuestionType;                   // Input type
