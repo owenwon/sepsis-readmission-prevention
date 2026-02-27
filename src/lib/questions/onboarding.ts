@@ -676,7 +676,7 @@ export const onboardingQuestions: Question[] = [
     caregiverHelpText: 'Think about how the patient feels right now, not how they felt before getting sepsis.',
     type: 'single_select',
     options: [
-      { label: 'Normal activity and stairs without difficulty', value: 'normal' },
+      { label: 'Able to walk and climb stairs without difficulty', value: 'normal' },
       { label: 'Walks and climbs stairs but tires easily', value: 'tires_easily' },
       { label: 'Needs help with walking or getting out of bed', value: 'needs_help' },
       { label: 'In bed or wheelchair most of the day', value: 'bed_or_wheelchair' },
