@@ -5,7 +5,7 @@ import { Question, QuestionSection, Survey } from './types';
 export const dailyCheckInQuestions: Question[] = [
 
   // ============================================================================
-  // IMMEDIATE DANGER (Questions 1-4)
+  // IMMEDIATE DANGER (Questions 1-5)
   // ============================================================================
 
   {
@@ -13,6 +13,8 @@ export const dailyCheckInQuestions: Question[] = [
     section: 'Immediate Danger',
     patientText: 'Have you fainted or felt very dizzy?',
     caregiverText: 'Has the patient fainted or felt very dizzy?',
+    helpText: 'Answer yes if you passed out, almost passed out, or feel so dizzy you cannot stand safely.',
+    caregiverHelpText: 'Answer yes if the patient passed out, almost passed out, or seems too dizzy to stand safely.',
     type: 'boolean',
     schemaField: 'fainted_or_very_dizzy',
     validation: { required: true },
@@ -24,12 +26,19 @@ export const dailyCheckInQuestions: Question[] = [
   },
 
   {
-    id: 'severe_trouble_breathing',
+    id: 'breathing_level',
     section: 'Immediate Danger',
-    patientText: 'Are you having severe trouble breathing?',
-    caregiverText: 'Is the patient having severe trouble breathing?',
-    type: 'boolean',
-    schemaField: 'severe_trouble_breathing',
+    patientText: 'How is your breathing right now?',
+    caregiverText: "How is the patient's breathing right now?",
+    helpText: 'Compare how your breathing feels right now to how it normally feels when you are sitting and at rest.',
+    caregiverHelpText: "Compare how the patient's breathing seems right now to how it normally looks when they are sitting and at rest.",
+    type: 'single_select',
+    options: [
+      { label: 'Normal', value: 1, iconEmoji: '😊' },
+      { label: 'Slightly more difficult or faster than usual', value: 2, iconEmoji: '😮‍💨' },
+      { label: 'Extremely difficult, major shortness of breath', value: 3, iconEmoji: '🆘' },
+    ],
+    schemaField: 'breathing_level',
     validation: { required: true },
     businessLogic: {
       terminatesSurvey: true,
@@ -39,12 +48,19 @@ export const dailyCheckInQuestions: Question[] = [
   },
 
   {
-    id: 'severe_confusion',
+    id: 'thinking_level',
     section: 'Immediate Danger',
-    patientText: 'Are you confused or not making sense?',
-    caregiverText: 'Is the patient confused or not making sense?',
-    type: 'boolean',
-    schemaField: 'severe_confusion',
+    patientText: 'How clear is your thinking right now?',
+    caregiverText: "How clear is the patient's thinking right now?",
+    helpText: 'Ask yourself whether you know where you are, what day it is, and what you were just doing.',
+    caregiverHelpText: 'Ask yourself whether the patient knows where they are, what day it is, and what is going on around them.',
+    type: 'single_select',
+    options: [
+      { label: 'Thinking clearly', value: 1, iconEmoji: '✅' },
+      { label: 'Thinking feels slow, foggy, or hard to concentrate', value: 2, iconEmoji: '🤔' },
+      { label: 'Confused, unsure of surroundings, or unsure of what is going on', value: 3, iconEmoji: '😵' },
+    ],
+    schemaField: 'thinking_level',
     validation: { required: true },
     businessLogic: {
       terminatesSurvey: true,
@@ -56,8 +72,10 @@ export const dailyCheckInQuestions: Question[] = [
   {
     id: 'extreme_heat_or_chills',
     section: 'Immediate Danger',
-    patientText: 'Are you feeling extremely hot or shaking with chills?',
-    caregiverText: 'Is the patient feeling extremely hot or shaking with chills?',
+    patientText: 'Are you feeling extremely hot or are you shaking with chills?',
+    caregiverText: 'Is the patient feeling extremely hot or are they shaking with chills?',
+    helpText: 'Answer yes if you are shaking so hard you cannot stop, or feel so intensely hot that it will not go away no matter what you do.',
+    caregiverHelpText: 'Answer yes if the patient is shaking so hard they cannot stop, or seems so intensely hot that it will not go away no matter what you do.',
     type: 'boolean',
     schemaField: 'extreme_heat_or_chills',
     validation: { required: true },
@@ -68,8 +86,24 @@ export const dailyCheckInQuestions: Question[] = [
     },
   },
 
+  {
+    id: 'discolored_skin',
+    section: 'Immediate Danger',
+    patientText: 'Are your skin or lips an unusual shade of blue, purple, or gray?',
+    caregiverText: "Are the patient's skin or lips an unusual shade of blue, purple, or gray?",
+    helpText: 'Check your face, lips, and fingernails in good lighting — bluish or grayish color can be a sign your body is not getting enough oxygen.',
+    caregiverHelpText: "Check the patient's face, lips, and fingernails in good lighting — bluish or grayish color can be a sign their body is not getting enough oxygen.",
+    type: 'boolean',
+    schemaField: 'discolored_skin',
+    businessLogic: {
+      terminatesSurvey: true,
+      terminationMessage: 'CALL 911 IMMEDIATELY - Skin discoloration indicates poor perfusion or hypoxia',
+      requiresEmergencyAlert: true,
+    },
+  },
+
   // ============================================================================
-  // ENERGY & WELL-BEING (Questions 5-7)
+  // ENERGY & WELL-BEING (Questions 6-8)
   // ============================================================================
 
   {
@@ -91,6 +125,8 @@ export const dailyCheckInQuestions: Question[] = [
     section: 'Energy & Well-Being',
     patientText: 'How is your energy level?',
     caregiverText: "How is the patient's energy level?",
+    helpText: 'Compare your energy to a normal day before you got sepsis, not to how you felt in the hospital.',
+    caregiverHelpText: "Compare the patient's energy to a normal day before they got sepsis, not to how they seemed in the hospital.",
     type: 'single_select',
     options: [
       { label: 'Normal', value: 1, iconEmoji: '💪' },
@@ -104,8 +140,10 @@ export const dailyCheckInQuestions: Question[] = [
   {
     id: 'pain_level',
     section: 'Energy & Well-Being',
-    patientText: 'Rate your pain level',
-    caregiverText: "Rate the patient's pain level",
+    patientText: 'Rate your pain on a scale of 0 to 10, where 0 is no pain and 10 is the worst pain imaginable.',
+    caregiverText: "Rate the patient's pain on a scale of 0 to 10, where 0 is no pain and 10 is the worst pain imaginable.",
+    helpText: 'Think about any pain anywhere in your body, including headaches, chest pain, belly pain, or pain at a wound site.',
+    caregiverHelpText: 'Think about any pain anywhere in the patient\'s body — look for signs like wincing, guarding, or verbal reports of headaches, chest pain, belly pain, or wound pain.',
     type: 'scale',
     schemaField: 'pain_level',
     validation: {
@@ -113,11 +151,10 @@ export const dailyCheckInQuestions: Question[] = [
       min: 0,
       max: 10,
     },
-    helpText: '0 = No pain, 10 = Worst pain imaginable',
   },
 
   // ============================================================================
-  // VITALS — TEMPERATURE (Questions 8-9)
+  // VITALS — TEMPERATURE (Questions 9-10)
   // ============================================================================
 
   {
@@ -125,6 +162,8 @@ export const dailyCheckInQuestions: Question[] = [
     section: 'Vitals',
     patientText: 'Have you experienced any fever or chills?',
     caregiverText: 'Has the patient experienced any fever or chills?',
+    helpText: 'Answer yes even if you only feel hot or cold — you do not need a thermometer to answer this question.',
+    caregiverHelpText: 'Answer yes even if the patient only feels hot or cold to the touch — a thermometer is not needed to answer this question.',
     type: 'boolean',
     schemaField: 'fever_chills',
     businessLogic: {
@@ -137,8 +176,10 @@ export const dailyCheckInQuestions: Question[] = [
     section: 'Vitals',
     patientText: 'Please enter your temperature (°F)',
     caregiverText: "Please enter the patient's temperature (°F)",
+    helpText: 'Wait at least 30 minutes after eating, drinking, or smoking before taking your temperature for the most accurate reading.',
+    caregiverHelpText: "Wait at least 30 minutes after the patient has eaten, drunk, or smoked before taking their temperature for the most accurate reading.",
     type: 'float',
-    schemaField: ['temperature_value', 'temperature_zone'],
+    schemaField: 'temperature_value',
     prerequisites: [
       { field: 'fever_chills', operator: '==', value: true, source: 'current' },
       { field: 'has_thermometer', operator: '==', value: true, source: 'onboarding' },
@@ -151,16 +192,14 @@ export const dailyCheckInQuestions: Question[] = [
     placeholder: 'e.g., 98.6',
     unit: '°F',
     businessLogic: {
-      calculatesZone: true,
-      zoneField: 'temperature_zone',
-      terminatesSurvey: true, // if zone is red
+      terminatesSurvey: true,
       terminationMessage: 'CALL 911 IMMEDIATELY - Temperature is dangerously high',
       requiresEmergencyAlert: true,
     },
   },
 
   // ============================================================================
-  // VITALS — OXYGEN (Question 10)
+  // VITALS — OXYGEN (Question 11)
   // ============================================================================
 
   {
@@ -168,8 +207,10 @@ export const dailyCheckInQuestions: Question[] = [
     section: 'Vitals',
     patientText: 'Please enter your oxygen level (SpO₂ %) while resting',
     caregiverText: "Please enter the patient's oxygen level (SpO₂ %) while resting",
+    helpText: 'Make sure your hand is warm and still, and remove any nail polish — these can cause a wrong reading.',
+    caregiverHelpText: "Make sure the patient's hand is warm and still, and remove any nail polish from the finger being used — these can cause a wrong reading.",
     type: 'integer',
-    schemaField: ['oxygen_level_value', 'oxygen_level_zone'],
+    schemaField: 'oxygen_level_value',
     prerequisites: [
       { field: 'has_pulse_oximeter', operator: '==', value: true, source: 'onboarding' },
     ],
@@ -181,16 +222,14 @@ export const dailyCheckInQuestions: Question[] = [
     placeholder: 'e.g., 98',
     unit: '%',
     businessLogic: {
-      calculatesZone: true,
-      zoneField: 'oxygen_level_zone',
-      terminatesSurvey: true, // if zone is red
+      terminatesSurvey: true,
       terminationMessage: 'CALL 911 IMMEDIATELY - Oxygen level is dangerously low',
       requiresEmergencyAlert: true,
     },
   },
 
   // ============================================================================
-  // VITALS — HEART RATE (Questions 11-12)
+  // VITALS — HEART RATE (Questions 12-13)
   // ============================================================================
 
   {
@@ -198,6 +237,8 @@ export const dailyCheckInQuestions: Question[] = [
     section: 'Vitals',
     patientText: 'Does your heart feel like it is racing or pounding?',
     caregiverText: "Does the patient's heart feel like it is racing or pounding?",
+    helpText: 'Answer yes if your heart feels like it is beating very fast, pounding hard, or skipping or fluttering.',
+    caregiverHelpText: 'Answer yes if the patient says their heart feels like it is racing, pounding, or skipping — or if you can visibly see or feel a rapid or irregular pulse.',
     type: 'boolean',
     schemaField: 'heart_racing',
     businessLogic: {
@@ -210,8 +251,10 @@ export const dailyCheckInQuestions: Question[] = [
     section: 'Vitals',
     patientText: 'Please take your pulse and enter your heart rate (beats per minute)',
     caregiverText: "Please take the patient's pulse and enter their heart rate (beats per minute)",
+    helpText: 'Sit still and rest for 1 minute before measuring for the most accurate reading.',
+    caregiverHelpText: 'Have the patient sit still and rest for 1 minute before measuring for the most accurate reading.',
     type: 'integer',
-    schemaField: ['heart_rate_value', 'heart_rate_zone'],
+    schemaField: 'heart_rate_value',
     prerequisites: [
       { field: 'heart_racing', operator: '==', value: true, source: 'current' },
       { field: 'has_hr_monitor', operator: '==', value: true, source: 'onboarding' },
@@ -224,27 +267,27 @@ export const dailyCheckInQuestions: Question[] = [
     placeholder: 'e.g., 72',
     unit: 'bpm',
     businessLogic: {
-      calculatesZone: true,
-      zoneField: 'heart_rate_zone',
-      terminatesSurvey: true, // if zone is red
+      terminatesSurvey: true,
       terminationMessage: 'CALL 911 IMMEDIATELY - Heart rate is dangerously high',
       requiresEmergencyAlert: true,
     },
   },
 
   // ============================================================================
-  // VITALS — BLOOD PRESSURE (Question 13)
+  // VITALS — BLOOD PRESSURE (Question 14)
   // ============================================================================
 
   {
     id: 'blood_pressure_systolic',
     section: 'Vitals',
     patientText:
-      'Please measure your blood pressure after resting for 3 minutes and enter the top number (systolic)',
+      'Please rest for 3 minutes, then measure your blood pressure with your arm supported at heart level and without speaking. Enter the top number (systolic).',
     caregiverText:
-      "Please measure the patient's blood pressure after resting for 3 minutes and enter the top number (systolic)",
+      "Please have the patient rest for 3 minutes, then measure their blood pressure with their arm supported at heart level and without speaking. Enter the top number (systolic).",
+    helpText: 'Sit quietly for 3 minutes first, rest your arm on a flat surface at heart level, and do not talk while the cuff is measuring.',
+    caregiverHelpText: "Have the patient sit quietly for 3 minutes first, rest their arm on a flat surface at heart level, and make sure they do not talk while the cuff is measuring.",
     type: 'integer',
-    schemaField: ['blood_pressure_systolic', 'blood_pressure_zone'],
+    schemaField: 'blood_pressure_systolic',
     prerequisites: [
       { field: 'has_bp_cuff', operator: '==', value: true, source: 'onboarding' },
     ],
@@ -255,62 +298,12 @@ export const dailyCheckInQuestions: Question[] = [
     placeholder: 'e.g., 120',
     unit: 'mmHg',
     businessLogic: {
-      calculatesZone: true,
-      zoneField: 'blood_pressure_zone',
       requiresUrgentAlert: true,
     },
   },
 
   // ============================================================================
-  // MENTAL STATUS (Question 14)
-  // ============================================================================
-
-  {
-    id: 'thinking_level',
-    section: 'Mental Status',
-    patientText: 'How clear is your thinking?',
-    caregiverText: "How clear is the patient's thinking?",
-    type: 'single_select',
-    options: [
-      { label: 'Clear', value: 1, iconEmoji: '✅' },
-      { label: 'Feels slow or not quite right', value: 2, iconEmoji: '🤔' },
-      { label: "Caregivers tell me I'm not making sense", value: 3, iconEmoji: '😵' },
-    ],
-    schemaField: 'thinking_level',
-    validation: { required: true },
-    businessLogic: {
-      terminatesSurvey: true, // if value is 3
-      terminationMessage: 'CALL 911 IMMEDIATELY - Severe mental status change',
-      requiresEmergencyAlert: true,
-    },
-  },
-
-  // ============================================================================
-  // BREATHING (Question 15)
-  // ============================================================================
-
-  {
-    id: 'breathing_level',
-    section: 'Breathing',
-    patientText: 'How is your breathing?',
-    caregiverText: "How is the patient's breathing?",
-    type: 'single_select',
-    options: [
-      { label: 'Normal', value: 1, iconEmoji: '😊' },
-      { label: 'Slightly more difficult/faster than usual', value: 2, iconEmoji: '😮‍💨' },
-      { label: 'Extremely difficult, major shortness of breath', value: 3, iconEmoji: '🆘' },
-    ],
-    schemaField: 'breathing_level',
-    validation: { required: true },
-    businessLogic: {
-      terminatesSurvey: true, // if value is 3
-      terminationMessage: 'CALL 911 IMMEDIATELY - Severe breathing difficulty',
-      requiresEmergencyAlert: true,
-    },
-  },
-
-  // ============================================================================
-  // ORGAN FUNCTION — URINE (Questions 16-18)
+  // ORGAN FUNCTION — URINE (Questions 15-17)
   // ============================================================================
 
   {
@@ -318,6 +311,8 @@ export const dailyCheckInQuestions: Question[] = [
     section: 'Organ Function',
     patientText: 'How does your urine look?',
     caregiverText: "How does the patient's urine look?",
+    helpText: 'Check your urine in good lighting — the first time you go in the morning gives the clearest picture.',
+    caregiverHelpText: "Check the patient's urine in good lighting — the first time they go in the morning gives the clearest picture.",
     type: 'single_select',
     options: [
       { label: 'Normal', value: 1, iconEmoji: '✅' },
@@ -337,12 +332,14 @@ export const dailyCheckInQuestions: Question[] = [
     section: 'Organ Function',
     patientText: 'In the past 24 hours, your urine symptoms have:',
     caregiverText: "In the past 24 hours, the patient's urine symptoms have:",
+    helpText: 'Burning means a painful or stinging feeling when you urinate — urgency means feeling like you cannot wait to go.',
+    caregiverHelpText: 'Burning means a painful or stinging feeling when urinating — urgency means the patient feels like they cannot wait to go.',
     type: 'single_select',
     options: [
       {
-        label: 'No symptoms or improving',
+        label: 'No symptoms or getting better',
         value: 'improved',
-        description: 'No burning, urgency, pressure, or pain, or symptoms are getting better',
+        description: 'No burning, urgency, pressure, or pain, or symptoms are improving',
       },
       {
         label: 'Mild or unchanged symptoms',
@@ -362,105 +359,51 @@ export const dailyCheckInQuestions: Question[] = [
     ],
   },
 
-  {
-    id: 'urine_output_level',
-    section: 'Organ Function',
-    patientText: 'How is your urine output?',
-    caregiverText: "How is the patient's urine output?",
-    type: 'single_select',
-    options: [
-      { label: 'Normal', value: 1, iconEmoji: '✅' },
-      { label: 'Less than usual', value: 2, iconEmoji: '⚠️' },
-      { label: 'Little to none', value: 3, iconEmoji: '🚨' },
-    ],
-    schemaField: 'urine_output_level',
-    prerequisites: [
-      {
-        field: 'has_kidney_disease',
-        operator: '==',
-        value: true,
-        source: 'onboarding',
-      },
-      {
-        field: 'has_kidney_failure',
-        operator: '==',
-        value: true,
-        source: 'onboarding',
-      }, 
-      {
-        field: 'has_dialysis',
-        operator: '==',
-        value: true,
-        source: 'onboarding',
-      }
-    ],
-  },
-
   // ============================================================================
-  // INFECTION (Questions 19-22)
+  // INFECTION (Questions 17-19)
   // ============================================================================
 
   {
     id: 'has_cough',
     section: 'Infection',
-    patientText: 'Do you have a cough or are you producing non-clear mucus?',
-    caregiverText: 'Does the patient have a cough or are they producing non-clear mucus?',
-    type: 'boolean',
-    schemaField: 'has_cough',
-    businessLogic: {
-      triggersFollowUp: 'cough_worsening',
-    },
-  },
-
-  {
-    id: 'cough_worsening',
-    section: 'Infection',
-    patientText: 'Has your cough worsened or is your mucus colored?',
-    caregiverText: "Has the patient's cough worsened or is their mucus colored?",
-    type: 'boolean',
-    schemaField: 'cough_worsening',
-    prerequisites: [
-      { field: 'has_cough', operator: '==', value: true, source: 'current' },
-      { field: 'has_recent_pneumonia', operator: '==', value: true, source: 'onboarding' },
+    patientText: 'If you have a cough, what color is your mucus?',
+    caregiverText: "If the patient has a cough, what color is their mucus?",
+    helpText: 'Mucus is the wet or sticky stuff that comes up when you cough — if you cough but nothing comes up, select "clear, white, or no mucus."',
+    caregiverHelpText: 'Mucus is the wet or sticky stuff that comes up when the patient coughs — if they cough but nothing comes up, select "clear, white, or no mucus."',
+    type: 'single_select',
+    options: [
+      { label: 'Clear, white, or no mucus', value: 1 },
+      { label: 'Yellow', value: 2 },
+      { label: 'Green', value: 2 },
+      { label: 'Brown, pink, or red', value: 3 },
+      { label: 'No cough', value: 'none' },
     ],
+    schemaField: ['has_cough', 'mucus_color_level'],
+    businessLogic: {
+      mapToMultipleFields: true,
+      customMapping: (value: number | string) => ({
+        has_cough: value !== 'none',
+        mucus_color_level: value === 'none' ? null : value,
+      }),
+    },
   },
 
   {
     id: 'wound_state_level',
     section: 'Infection',
-    patientText: 'If you have a wound site (surgical or non-surgical), how does it look?',
-    caregiverText: "If the patient has a wound site (surgical or non-surgical), how does it look?",
+    patientText: 'If you have any wound(s), how does it look compared to yesterday?',
+    caregiverText: "If the patient has any wound(s), how does it look compared to yesterday?",
+    helpText: 'A wound includes any cut, surgery site, sore, or broken skin — including IV sites from your hospital stay.',
+    caregiverHelpText: "A wound includes any cut, surgery site, sore, or broken skin on the patient — including IV sites from their hospital stay.",
     type: 'single_select',
     options: [
-      { label: 'Healing', value: 1, iconEmoji: '✅' },
-      { label: 'Looks different', value: 2, iconEmoji: '⚠️' },
-      { label: 'Painful, red, smells, has pus, or is swollen', value: 3, iconEmoji: '🚨' },
+      { label: 'Looks the same or better than yesterday', value: 1, iconEmoji: '✅' },
+      { label: 'Color, size, or feel has changed', value: 2, iconEmoji: '⚠️' },
+      { label: 'Painful, red, swollen, has pus, or smells unusual', value: 3, iconEmoji: '🚨' },
+      { label: 'No wound present', value: 'none' },
     ],
     schemaField: 'wound_state_level',
-    prerequisites: [
-      { field: 'has_active_wound', operator: '==', value: true, source: 'onboarding' },
-    ],
   },
-
-  {
-    id: 'discolored_skin',
-    section: 'Infection',
-    patientText:
-      'Are your skin, lips, or nails a different color than usual? (For example: pale, bluish, purple, gray, or yellow)',
-    caregiverText:
-      "Are the patient's skin, lips, or nails a different color than usual? (For example: pale, bluish, purple, gray, or yellow)",
-    type: 'boolean',
-    schemaField: 'discolored_skin',
-    businessLogic: {
-      terminatesSurvey: true,
-      terminationMessage: 'CALL 911 IMMEDIATELY - Skin discoloration indicates poor perfusion or hypoxia',
-      requiresEmergencyAlert: true,
-    },
-  },
-
-  // ============================================================================
-  // GI SYMPTOMS (Question 23)
-  // ============================================================================
 
   {
     id: 'nausea_vomiting_diarrhea',
@@ -472,7 +415,7 @@ export const dailyCheckInQuestions: Question[] = [
   },
 
   // ============================================================================
-  // ADDITIONAL NOTES (Question 24)
+  // ADDITIONAL NOTES (Question 20)
   // ============================================================================
 
   {
@@ -510,20 +453,6 @@ export const dailyCheckInSections: QuestionSection[] = [
     description: 'Temperature, oxygen, heart rate, blood pressure',
     icon: '🩺',
     questions: dailyCheckInQuestions.filter((q) => q.section === 'Vitals'),
-  },
-  {
-    id: 'mental_status',
-    title: 'Mental Status',
-    description: 'Mental clarity and alertness',
-    icon: '🧠',
-    questions: dailyCheckInQuestions.filter((q) => q.section === 'Mental Status'),
-  },
-  {
-    id: 'breathing',
-    title: 'Breathing',
-    description: 'Respiratory status',
-    icon: '🫁',
-    questions: dailyCheckInQuestions.filter((q) => q.section === 'Breathing'),
   },
   {
     id: 'organ_function',

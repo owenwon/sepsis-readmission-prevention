@@ -21,15 +21,15 @@ This algorithm categorizes post-discharge patients into four risk tiers based on
 ```
 INPUT: Patient survey responses
    ↓
-STEP 1: Emergency Conditions → If YES → RED_EMERGENCY (exit)
+STEP 1: Emergency Conditions → If triggered → RED_EMERGENCY (exit)
    ↓
-STEP 2: Hard RED Overrides → If triggered → RED or RED_EMERGENCY (exit)
+STEP 2: Hard RED Overrides → If triggered → RED_EMERGENCY (exit)
    ↓
-STEP 3: Count Critical Flags
+STEP 3: Detect Clinical Patterns → Determines pattern escalation level
    ↓
-STEP 4: Detect Clinical Patterns → Determines pattern escalation level
+STEP 4: Calculate Base Score → Sum of individual symptom points
    ↓
-STEP 5: Calculate Base Score → Sum of individual symptom points
+STEP 5: Apply Context Bonuses → Additive adjustments from patient history
    ↓
 STEP 6: Apply High-Risk Modifier → Score × 1.25 if applicable
    ↓
@@ -42,81 +42,56 @@ OUTPUT: Risk tier + reasoning
 
 ## STEP 1: Emergency Conditions
 
-**Logic:** If ANY of these are TRUE, immediately return RED_EMERGENCY.
+**Logic:** If ANY of these are true, immediately return RED_EMERGENCY. No further calculation.
 
-| Question | Condition | Result |
-|----------|-----------|--------|
-| Q1: Fainting/dizziness | `fainted_or_very_dizzy = true` | RED_EMERGENCY |
-| Q2: Severe breathing trouble | `severe_trouble_breathing = true` | RED_EMERGENCY |
-| Q3: Severe confusion | `severe_confusion = true` | RED_EMERGENCY |
-| Q4: Extreme heat/chills | `extreme_heat_or_chills = true` | RED_EMERGENCY |
-
-**If triggered:** Algorithm terminates. No further calculation needed.
+| Field | Condition | Result |
+|-------|-----------|--------|
+| `fainted_or_very_dizzy` | `= true` | RED_EMERGENCY |
+| `breathing_level` | `= 3` (extremely difficult) | RED_EMERGENCY |
+| `thinking_level` | `= 3` (not making sense) | RED_EMERGENCY |
+| `extreme_heat_or_chills` | `= true` | RED_EMERGENCY |
+| `discolored_skin` | `= true` (mottling/cyanosis/jaundice) | RED_EMERGENCY |
 
 ---
 
 ## STEP 2: Hard RED Overrides
 
-**Logic:** Critical vital sign thresholds that require immediate escalation.
+**Logic:** Critical vital sign thresholds that require immediate escalation. Evaluated after Step 1. No further calculation if triggered.
 
-| Condition | Threshold | Result |
-|-----------|-----------|--------|
-| Temperature | ≥ 103.5°F | RED_EMERGENCY |
-| Oxygen level | < 90% | RED_EMERGENCY |
-| Heart rate | > 140 bpm | RED_EMERGENCY |
-| Breathing level | = 3 (extremely difficult) | RED_EMERGENCY |
-| Thinking level | = 3 (not making sense) | RED_EMERGENCY |
-| Blood pressure zone | = 3 (severe hypotension/crisis) | RED_EMERGENCY |
-| Skin discoloration | = true (mottling/cyanosis/jaundice) | RED_EMERGENCY |
+| Field | Condition | Result |
+|-------|-----------|--------|
+| `temperature_value` | `≥ 103.5°F` | RED_EMERGENCY |
+| `oxygen_level_value` | `< 90%` | RED_EMERGENCY |
+| `heart_rate_value` | `> 140 bpm` | RED_EMERGENCY |
+| `breathing_level` | `= 3` | RED_EMERGENCY |
+| `thinking_level` | `= 3` | RED_EMERGENCY |
+| `blood_pressure_zone` | `= 3` (severe hypotension/crisis) | RED_EMERGENCY |
 
-**If triggered:** Algorithm terminates. No further calculation needed.
-
----
-
-## STEP 3: Count Critical Flags
-
-**Logic:** Count how many organ systems are in "red zone" (zone 3).
-
-| Vital/Organ | Counts as Critical Flag if... |
-|-------------|------------------------------|
-| Temperature | `temperature_zone = 3` |
-| Oxygen | `oxygen_level_zone = 3` |
-| Heart rate | `heart_rate_zone = 3` |
-| Blood pressure | `blood_pressure_zone = 3` |
-| Urine appearance | `urine_appearance_level = 3` |
-| Urine output | `urine_output_level = 3` |
-| Wound status | `wound_state_level = 3` |
-
-**Formula:**
-```
-criticalFlags = (count of conditions above that are TRUE)
-```
-
-**Range:** 0 to 7
+*Note: `breathing_level = 3` and `thinking_level = 3` appear in both Step 1 and Step 2 as redundant safety nets.*
 
 ---
 
-## STEP 4: Detect Clinical Patterns
+## STEP 3: Detect Clinical Patterns
 
-**Logic:** Check for dangerous symptom combinations. Each pattern maps to an escalation level.
+**Logic:** Check for dangerous symptom combinations. Each pattern maps to an escalation level. Patterns can only **increase** risk, never decrease it. Priority order: `RED_EMERGENCY > RED > YELLOW`.
 
-### Pattern Definitions
+### Infection Context Definition
 
-**Pattern 1: Septic Shock** (only applies to BP zone 2; zone 3 handled by hard override)
-```
-IF blood_pressure_zone = 2
-   AND thinking_level ≥ 2
-THEN:
-   IF hasClearInfectionContext = TRUE → RED_EMERGENCY (exit immediately)
-   ELSE → RED (continue checking other patterns)
-```
-
-Where `hasClearInfectionContext` is TRUE if ANY of:
+Several patterns reference `hasClearInfectionContext`, which is `true` if ANY of:
 - `fever_chills = true`
 - `temperature_zone ≥ 2`
 - `urine_appearance_level ≥ 2`
 - `wound_state_level = 3`
-- `has_cough = true AND cough_worsening = true`
+- `has_cough = true AND mucus_color_level ≥ 2`
+
+### Pattern Definitions
+
+**Pattern 1: Septic Shock** — only applies when `blood_pressure_zone = 2`; zone 3 is caught by the hard override in Step 2
+```
+IF blood_pressure_zone = 2 AND thinking_level ≥ 2 THEN:
+   IF hasClearInfectionContext = true → RED_EMERGENCY (exit immediately, skip remaining patterns)
+   ELSE                               → RED
+```
 
 **Pattern 2: Respiratory Failure**
 ```
@@ -133,21 +108,21 @@ IF oxygen_level_zone ≥ 2 AND energy_level = 3 → RED
 IF fever_chills = true AND thinking_level ≥ 2 → RED
 ```
 
-**Pattern 5: Compensated Shock** (tachycardia compensating for hypotension)
+**Pattern 5: Compensated Shock**
 ```
-IF blood_pressure_zone ≥ 2 
-   AND blood_pressure_systolic ≤ baseline
-   AND heart_rate_zone ≥ 2 
+IF blood_pressure_zone ≥ 2
+   AND blood_pressure_systolic ≤ (baseline_bp_systolic OR 120)
+   AND heart_rate_zone ≥ 2
 → RED
 ```
-*Note: Only triggers for LOW blood pressure, not hypertensive crisis (>180)*
+*This pattern only triggers for LOW blood pressure. A hypertensive crisis (>180) produces BP zone 3, which is caught by the hard override before this pattern is evaluated.*
 
 **Pattern 6: Septic Hypothermia**
 ```
 IF temperature_value < 96.8°F → RED
 ```
 
-**Pattern 7: SIRS Criteria** (Systemic Inflammatory Response Syndrome)
+**Pattern 7: SIRS Criteria**
 ```
 IF temperature_zone ≥ 2 AND heart_rate_zone ≥ 2 → YELLOW
 ```
@@ -162,68 +137,71 @@ IF fever_chills = true AND urine_appearance_level ≥ 2 → YELLOW
 IF energy_level = 3 AND heart_rate_zone ≥ 2 → YELLOW
 ```
 
-### Pattern Priority Resolution
-
-If multiple patterns match, keep the highest priority:
-```
-RED_EMERGENCY > RED > YELLOW > null
-```
-
-**Output:** `patternEscalation` = highest level triggered (or null if none)
+**Output:** `patternEscalation` = highest level triggered (or null if none match)
 
 ---
 
-## STEP 5: Calculate Base Score
+## STEP 4: Calculate Base Score
 
-**Logic:** Sum points for each symptom present.
+**Logic:** Sum points for each symptom present. Several fields have amplified scores when certain patient history flags are set.
 
-### Energy & Well-being
+### Energy Level
 
 | Condition | Points |
 |-----------|--------|
 | `energy_level = 2` (fatigued) | +5 |
+| `energy_level = 2` AND `has_heart_failure = true` | +10 |
 | `energy_level = 3` (extremely fatigued) | +15 |
+| `energy_level = 3` AND `has_heart_failure = true` | +25 |
 
-### Fever/Chills
+*Rationale: Fatigue in CHF patients signals cardiac decompensation earlier than in the general population.*
+
+### Subjective Fever
 
 | Condition | Points |
 |-----------|--------|
 | `fever_chills = true AND has_thermometer = false` | +10 |
 
-*Note: If thermometer available, temperature_zone scoring applies instead*
+*Only scored when no thermometer is available. When a thermometer is present, `temperature_zone` scoring applies instead.*
 
 ### Temperature
 
 | Condition | Points |
 |-----------|--------|
-| `temperature_zone = 2` (100-101.4°F) | +15 |
+| `temperature_zone = 2` (100–101.4°F) | +15 |
 | `temperature_zone = 3` (<96.8°F or ≥101.5°F) | +40 |
 
 ### Oxygen Level
 
 | Condition | Points |
 |-----------|--------|
-| `oxygen_level_zone = 2` (92-94%) | +15 |
+| `oxygen_level_zone = 2` (92–94%) | +15 |
 | `oxygen_level_zone = 3` (<92%) | +40 |
 
-### Heart Rate (subjective)
+### Subjective Heart Racing
 
 | Condition | Points |
 |-----------|--------|
 | `heart_racing = true AND has_hr_monitor = false` | +5 |
 
+*Only scored when no heart rate monitor is available.*
+
 ### Heart Rate (measured)
 
 | Condition | Points |
 |-----------|--------|
-| `heart_rate_zone = 2` (101-120 bpm) | +8 |
-| `heart_rate_zone = 3` (<60 or >120 bpm) | +20 |
+| `heart_rate_zone = 2` (101–120 bpm) | +8 |
+| `heart_rate_zone = 2` AND `has_heart_failure = true` | +15 |
+| `heart_rate_zone = 3` (<60 or >120 bpm) | +30 |
+| `heart_rate_zone = 3` AND `has_heart_failure = true` | +40 |
+
+*Rationale: Tachycardia in CHF is a compensatory mechanism that signals decompensation earlier than in other patients.*
 
 ### Blood Pressure
 
 | Condition | Points |
 |-----------|--------|
-| `blood_pressure_zone = 2` (20-39 below baseline) | +8 |
+| `blood_pressure_zone = 2` (20–39 mmHg below baseline) | +8 |
 | `blood_pressure_zone = 3` (<90, >180, or 40+ below baseline) | +20 |
 
 ### Mental Status
@@ -232,50 +210,57 @@ RED_EMERGENCY > RED > YELLOW > null
 |-----------|--------|
 | `thinking_level = 2` (slow or foggy) | +8 |
 
-*Note: thinking_level = 3 triggers hard RED override in Step 2*
+*`thinking_level = 3` triggers RED_EMERGENCY in Steps 1 and 2 before scoring is reached.*
 
 ### Breathing
 
 | Condition | Points |
 |-----------|--------|
-| `breathing_level = 2` (slightly difficult) | +8 |
+| `breathing_level = 2` | +8 |
+| `breathing_level = 2` AND (`has_lung_condition = true` OR `has_heart_failure = true`) | +16 |
 
-*Note: breathing_level = 3 triggers hard RED override in Step 2*
+*Rationale: For COPD/asthma/lung fibrosis patients, mildly difficult breathing indicates exacerbation. For CHF patients, it may signal pulmonary oedema.*
 
 ### Urine Appearance
 
 | Condition | Points |
 |-----------|--------|
 | `urine_appearance_level = 2` (cloudy/dark/smelly) | +15 |
-| `urine_appearance_level = 3` (very dark/bloody) | +40 |
+| `urine_appearance_level = 3` (very dark/bloody) | +60 |
 
 ### UTI Symptoms
 
+Only scored when `has_recent_uti = true`.
+
 | Condition | Points |
 |-----------|--------|
-| `uti_symptoms_worsening = 'same' AND has_recent_uti = true` | +10 |
+| `uti_symptoms_worsening = 'same'` | +10 |
+| `uti_symptoms_worsening = 'same'` AND `has_urinary_catheter = true` | +18 |
 | `uti_symptoms_worsening = 'worsened'` | +30 |
+| `uti_symptoms_worsening = 'worsened'` AND `has_urinary_catheter = true` | +40 |
 
-### Urine Output
+*Rationale: Catheter-associated UTIs (CAUTI) carry higher sepsis risk than uncatheterized UTIs.*
 
-| Condition | Points |
-|-----------|--------|
-| `urine_output_level = 2` (less than usual) | +8 |
-| `urine_output_level = 3` (little to none) | +40 |
-
-### Respiratory Infection
+### Mucus / Cough
 
 | Condition | Points |
 |-----------|--------|
-| `has_cough = true` | +3 |
-| `cough_worsening = true` | +5 |
+| `has_cough = true` (mucus level 1 or null) | +3 |
+| `mucus_color_level = 2` (yellow/green) | +10 |
+| `mucus_color_level = 2` AND `has_lung_condition = true` | +18 |
+| `mucus_color_level = 2` AND `has_recent_pneumonia = true` | +10 additional |
+| `mucus_color_level = 3` (brown/pink/red) | +30 |
+| `mucus_color_level = 3` AND `has_lung_condition = true` | +35 |
+| `mucus_color_level = 3` AND `has_recent_pneumonia = true` | +10 additional |
+
+*Rationale: Colored or bloody mucus in patients with COPD, asthma, or lung fibrosis more reliably indicates exacerbation or superimposed infection. The pneumonia bonus stacks on top of the base or lung-condition score.*
 
 ### Wound Status
 
 | Condition | Points |
 |-----------|--------|
 | `wound_state_level = 2` (looks different) | +10 |
-| `wound_state_level = 3` (infected: red, pus, swollen) | +40 |
+| `wound_state_level = 3` (infected: red/pus/swollen) | +60 |
 
 ### GI Symptoms
 
@@ -283,74 +268,79 @@ RED_EMERGENCY > RED > YELLOW > null
 |-----------|--------|
 | `nausea_vomiting_diarrhea = true` | +5 |
 
-### Base Score Formula
+---
 
-```
-baseScore = SUM of all applicable points above
-```
+## STEP 5: Apply Context Bonuses
 
-**Range:** 0 to ~300+ (theoretical maximum if all symptoms present)
+**Logic:** Additive flat bonuses applied to the base score from Step 4. These reflect patient history risk factors independent of today's symptoms.
+
+### Recent Discharge
+
+| Condition | Bonus |
+|-----------|-------|
+| `days_since_last_discharge ≤ 7` | +15 |
+| `days_since_last_discharge` 8–30 | +8 |
+| `days_since_last_discharge` 31–90 | +3 |
+| `days_since_last_discharge > 90` | +0 |
+
+*Rationale: Sepsis recurrence risk is highest immediately post-discharge and decays over 90 days.*
+
+### Prior Septic Shock
+
+| Condition | Bonus |
+|-----------|-------|
+| `has_had_septic_shock = true` | +10 |
+
+*Rationale: Prior septic shock is the strongest independent predictor of future severe sepsis. Even mild presentations warrant higher concern in this population.*
 
 ---
 
 ## STEP 6: Apply High-Risk Modifier
 
-**Logic:** Vulnerable patients get a 25% score increase.
+**Logic:** Certain patient groups receive a 25% score increase to compensate for atypical or attenuated symptom presentation.
 
 ### High-Risk Criteria
 
 Patient is high-risk if ANY of these are true:
-- `age ≥ 65`
-- `weakened_immune = true`
-- `readmission_count ≥ 1`
+
+| Field | Condition |
+|-------|-----------|
+| `age` | `≥ 65` |
+| `has_weakened_immune` | `= true` |
+| `admitted_count` | `> 1` |
+| `on_immunosuppressants` | `= true` |
+
+*Rationale: Immunosuppressed patients may not mount a classic fever response; the score amplification compensates for attenuated symptoms. Patients admitted more than once have demonstrated recurrence risk.*
 
 ### Calculation
 
 ```
-IF highRiskPatient = TRUE:
+IF isHighRiskPatient = true:
    totalScore = ROUND(baseScore × 1.25)
 ELSE:
    totalScore = baseScore
 ```
 
-**Example:**
-- Base score = 48
-- Patient age = 72 (high-risk)
-- Total score = ROUND(48 × 1.25) = ROUND(60) = 60
-
 ---
 
 ## STEP 7: Determine Final Risk Level
 
-**Logic:** Combine score-based thresholds with pattern-based escalation.
+**Logic:** Combine score-based thresholds with pattern-based escalation. Patterns can only increase the final level, never decrease it.
 
 ### Part A: Score-Based Level
 
-Evaluate in this order (first match wins):
-
 ```
-IF criticalFlags ≥ 2:
+IF totalScore ≥ 60:
    scoreBasedLevel = RED
-   
-ELSE IF totalScore ≥ 60:
-   scoreBasedLevel = RED
-   
-ELSE IF totalScore ≥ 30 AND criticalFlags ≥ 1:
-   scoreBasedLevel = RED
-   
+
 ELSE IF totalScore ≥ 30:
    scoreBasedLevel = YELLOW
-   
-ELSE IF criticalFlags ≥ 1:
-   scoreBasedLevel = YELLOW  // Safety net: never GREEN with a critical flag
-   
+
 ELSE:
    scoreBasedLevel = GREEN
 ```
 
 ### Part B: Pattern Escalation
-
-Apply pattern escalation (patterns can only INCREASE risk, never decrease):
 
 ```
 IF patternEscalation = RED_EMERGENCY:
@@ -372,7 +362,7 @@ ELSE:
 finalLevel = MAX(scoreBasedLevel, patternEscalation)
 ```
 
-Where priority order is: GREEN < YELLOW < RED < RED_EMERGENCY
+Where priority order is: `GREEN < YELLOW < RED < RED_EMERGENCY`
 
 ---
 
@@ -386,6 +376,8 @@ Where priority order is: GREEN < YELLOW < RED < RED_EMERGENCY
 | 2 (Yellow) | 100°F – 101.4°F | Low-grade fever |
 | 3 (Red) | <96.8°F or ≥101.5°F | Hypothermia or high fever |
 
+*Hard override: temperature ≥ 103.5°F → RED_EMERGENCY (Steps 1–2, before scoring)*
+
 ### Oxygen Zones
 
 | Zone | Range | Interpretation |
@@ -394,23 +386,27 @@ Where priority order is: GREEN < YELLOW < RED < RED_EMERGENCY
 | 2 (Yellow) | 92% – 94% | Mild hypoxia |
 | 3 (Red) | <92% | Significant hypoxia |
 
+*Hard override: oxygen < 90% → RED_EMERGENCY (Steps 1–2, before scoring)*
+
 ### Heart Rate Zones
 
 | Zone | Range | Interpretation |
 |------|-------|----------------|
-| 1 (Green) | 60 – 100 bpm | Normal |
-| 2 (Yellow) | 101 – 120 bpm | Tachycardia |
-| 3 (Red) | <60 or >120 bpm | Severe bradycardia/tachycardia |
+| 1 (Green) | 60–100 bpm | Normal |
+| 2 (Yellow) | 101–120 bpm | Tachycardia |
+| 3 (Red) | <60 or >120 bpm | Bradycardia or severe tachycardia |
+
+*Hard override: heart rate > 140 bpm → RED_EMERGENCY (Steps 1–2, before scoring)*
 
 ### Blood Pressure Zones
 
 | Zone | Condition | Interpretation |
 |------|-----------|----------------|
-| 1 (Green) | Stable (within 20 of baseline) | Normal |
-| 2 (Yellow) | 20-39 mmHg below baseline | Moderate drop |
-| 3 (Red) | <90 mmHg, >180 mmHg, or 40+ below baseline | Severe hypotension/crisis |
+| 1 (Green) | Within 20 mmHg of baseline | Normal |
+| 2 (Yellow) | 20–39 mmHg below baseline | Moderate drop |
+| 3 (Red) | <90 mmHg, >180 mmHg, or ≥40 mmHg below baseline | Severe hypotension or crisis |
 
-**Default baseline:** 120 mmHg (if not provided)
+*Default baseline: 120 mmHg if `baseline_bp_systolic` not provided. Hard override: zone 3 → RED_EMERGENCY.*
 
 ---
 
@@ -419,27 +415,26 @@ Where priority order is: GREEN < YELLOW < RED < RED_EMERGENCY
 ### Example A: Healthy Check-in
 
 **Input:**
-- All emergency questions: false
+- All emergency questions: false/normal
+- Age: 45, no immune issues, admitted once
 - Temperature: 98.6°F → zone 1
 - Oxygen: 98% → zone 1
 - Heart rate: 75 bpm → zone 1
 - Blood pressure: 118 mmHg (baseline 120) → zone 1
-- Thinking: level 1 (clear)
-- Breathing: level 1 (normal)
-- Energy: level 1 (normal)
-- All other symptoms: negative
-- Age: 45, no immune issues, no readmissions
+- Energy: level 1, Thinking: level 1, Breathing: level 1
+- All other symptoms: negative/normal
 
 **Calculation:**
-1. Emergency conditions: None triggered
-2. Hard RED overrides: None triggered
-3. Critical flags: 0
-4. Patterns: None detected
-5. Base score: 0
-6. High-risk modifier: No → totalScore = 0
-7. Score-based level: GREEN (score < 30, no critical flags)
-8. Pattern escalation: None
-9. **Final: GREEN**
+1. Emergency conditions: none triggered
+2. Hard RED overrides: none triggered
+3. Patterns: none match
+4. Base score: 0 (all vitals normal, no symptoms)
+5. Context bonuses: none
+6. High-risk modifier: no → totalScore = 0
+7. Score-based level: GREEN (0 < 30)
+8. Pattern escalation: none
+
+**Final: GREEN**
 
 ---
 
@@ -448,112 +443,124 @@ Where priority order is: GREEN < YELLOW < RED < RED_EMERGENCY
 **Input:**
 - Temperature: 100.8°F → zone 2
 - Heart rate: 112 bpm → zone 2
-- All other vitals normal
-- Age: 55
+- All other vitals normal, no additional symptoms
+- Age: 55, no high-risk flags
 
 **Calculation:**
-1. Emergency conditions: None
-2. Hard RED overrides: None
-3. Critical flags: 0
-4. Patterns detected:
-   - Pattern 7 (SIRS): temp_zone ≥ 2 AND hr_zone ≥ 2 → YELLOW
-5. Base score:
+1. Emergency conditions: none triggered
+2. Hard RED overrides: none triggered
+3. Patterns:
+   - Pattern 7 (SIRS): `temperature_zone ≥ 2` AND `heart_rate_zone ≥ 2` → YELLOW
+4. Base score:
    - Temperature zone 2: +15
    - Heart rate zone 2: +8
-   - **Total: 23**
-6. High-risk modifier: No → totalScore = 23
+   - **Base score = 23**
+5. Context bonuses: none → adjusted score = 23
+6. High-risk modifier: no → totalScore = 23
 7. Score-based level: GREEN (23 < 30)
-8. Pattern escalation: YELLOW
-9. **Final: YELLOW** (pattern escalated from GREEN)
+8. Pattern escalation: YELLOW → upgrades GREEN to YELLOW
+
+**Final: YELLOW** — pattern escalated from GREEN
 
 ---
 
 ### Example C: Severe Hypotension (Hard Override)
 
 **Input:**
-- Blood pressure: 80 mmHg (baseline 120) → zone 3
+- Blood pressure: 80 mmHg (baseline 120) → zone 3 (<90 threshold)
 - All other vitals normal
 - Thinking: level 1 (clear)
 
 **Calculation:**
-1. Emergency conditions: None
-2. Hard RED overrides: 
-   - BP zone = 3 → **RED_EMERGENCY** (exit)
-3. **Final: RED_EMERGENCY** (hard override triggered)
+1. Emergency conditions: none triggered
+2. Hard RED overrides: `blood_pressure_zone = 3` → **RED_EMERGENCY** (exit)
+
+**Final: RED_EMERGENCY** — hard override triggered, no further steps
 
 ---
 
 ### Example D: Septic Shock Pattern
 
 **Input:**
-- Blood pressure: 95 mmHg (baseline 120) → zone 2 (25 below baseline)
+- Blood pressure: 95 mmHg (baseline 120) → zone 2 (25 mmHg below baseline)
 - Thinking: level 2 (foggy)
 - Temperature: 101.0°F → zone 2
 - Heart rate: 105 bpm → zone 2
+- No high-risk flags
 
 **Calculation:**
-1. Emergency conditions: None
-2. Hard RED overrides: None (BP zone = 2, not 3)
-3. Critical flags: 0
-4. Patterns detected:
-   - Pattern 1 (Septic Shock): BP zone 2 + thinking ≥ 2
-     - Check infection context: temp_zone ≥ 2 = TRUE
-     - → **RED_EMERGENCY** (exit immediately)
-5. **Final: RED_EMERGENCY**
+1. Emergency conditions: none triggered
+2. Hard RED overrides: none (BP zone = 2, not 3)
+3. Patterns:
+   - Pattern 1 (Septic Shock): `blood_pressure_zone = 2` AND `thinking_level ≥ 2`
+     - Check `hasClearInfectionContext`: `temperature_zone ≥ 2` → **true**
+     - → RED_EMERGENCY, exit immediately
+
+**Final: RED_EMERGENCY** — septic shock pattern with confirmed infection context
 
 ---
 
 ### Example E: Multiple Symptoms, High-Risk Patient
 
 **Input:**
-- Age: 78 (high-risk)
-- Temperature: 100.5°F → zone 2 (+15)
-- Heart rate: 108 bpm → zone 2 (+8)
-- Thinking: level 2 (+8)
-- Energy: level 2 (+5)
-- Urine: level 2 (+15)
-- Has cough (+3)
-- GI symptoms (+5)
+- Age: 78 (high-risk: age ≥ 65)
+- Temperature: 100.5°F → zone 2
+- Heart rate: 108 bpm → zone 2
+- Thinking: level 2 (foggy)
+- Energy: level 2 (fatigued)
+- Urine: level 2 (cloudy)
+- Cough present, clear mucus (mucus level 1)
+- GI symptoms present
+- No `has_heart_failure`, no `has_lung_condition`
 
 **Calculation:**
-1. Emergency conditions: None
-2. Hard RED overrides: None
-3. Critical flags: 0
-4. Patterns detected:
-   - Pattern 7 (SIRS): temp ≥ 2 + HR ≥ 2 → YELLOW
-5. Base score: 15 + 8 + 8 + 5 + 15 + 3 + 5 = **59**
-6. High-risk modifier: Yes (age 78)
-   - totalScore = ROUND(59 × 1.25) = ROUND(73.75) = **74**
+1. Emergency conditions: none triggered
+2. Hard RED overrides: none triggered
+3. Patterns:
+   - Pattern 7 (SIRS): `temperature_zone ≥ 2` AND `heart_rate_zone ≥ 2` → YELLOW
+4. Base score:
+   - Temperature zone 2: +15
+   - Heart rate zone 2: +8
+   - Thinking level 2: +8
+   - Energy level 2 (no CHF): +5
+   - Urine level 2: +15
+   - Cough, clear mucus: +3
+   - GI symptoms: +5
+   - **Base score = 59**
+5. Context bonuses: none → adjusted score = 59
+6. High-risk modifier: yes (age 78) → totalScore = ROUND(59 × 1.25) = ROUND(73.75) = **74**
 7. Score-based level: RED (74 ≥ 60)
-8. Pattern escalation: YELLOW (but RED > YELLOW)
-9. **Final: RED** (score-based level wins)
+8. Pattern escalation: YELLOW (RED > YELLOW, no upgrade)
+
+**Final: RED** — score-based level wins over pattern
 
 ---
 
 ### Example F: Compensated Shock (Tachycardia + Hypotension)
 
 **Input:**
-- Blood pressure: 98 mmHg (baseline 125) → zone 2 (27 below baseline)
+- Blood pressure: 98 mmHg (baseline 125) → zone 2 (27 mmHg below baseline)
 - Heart rate: 118 bpm → zone 2
 - Thinking: level 1 (clear)
-- No fever, no infection signs
+- No fever, no infection signs, no high-risk flags
 
 **Calculation:**
-1. Emergency conditions: None
-2. Hard RED overrides: None
-3. Critical flags: 0
-4. Patterns detected:
-   - Pattern 5 (Compensated Shock): BP zone ≥ 2 AND HR zone ≥ 2 → RED
-5. Base score:
+1. Emergency conditions: none triggered
+2. Hard RED overrides: none triggered
+3. Patterns:
+   - Pattern 5 (Compensated Shock): `blood_pressure_zone ≥ 2` AND `bp_systolic (98) ≤ baseline (125)` AND `heart_rate_zone ≥ 2` → RED
+4. Base score:
    - BP zone 2: +8
-   - HR zone 2: +8
-   - **Total: 16**
-6. High-risk modifier: No → totalScore = 16
+   - Heart rate zone 2: +8
+   - **Base score = 16**
+5. Context bonuses: none → adjusted score = 16
+6. High-risk modifier: no → totalScore = 16
 7. Score-based level: GREEN (16 < 30)
-8. Pattern escalation: RED
-9. **Final: RED** (pattern escalated from GREEN)
+8. Pattern escalation: RED → upgrades GREEN to RED
 
-**Clinical rationale:** Even though individual scores are low, the heart is racing to compensate for falling blood pressure—a pre-shock state requiring urgent evaluation.
+**Final: RED** — pattern escalated from GREEN
+
+*Clinical rationale: The heart is racing to compensate for falling blood pressure — a pre-shock state requiring urgent evaluation even though individual scores are low.*
 
 ---
 
@@ -562,30 +569,44 @@ Where priority order is: GREEN < YELLOW < RED < RED_EMERGENCY
 | Category | Condition | Points |
 |----------|-----------|--------|
 | Energy | Level 2 (fatigued) | +5 |
+| Energy | Level 2 + `has_heart_failure` | +10 |
 | Energy | Level 3 (extremely fatigued) | +15 |
-| Subjective fever | No thermometer | +10 |
+| Energy | Level 3 + `has_heart_failure` | +25 |
+| Subjective fever | `fever_chills` + no thermometer | +10 |
 | Temperature | Zone 2 | +15 |
 | Temperature | Zone 3 | +40 |
 | Oxygen | Zone 2 | +15 |
 | Oxygen | Zone 3 | +40 |
-| Subjective HR | No monitor | +5 |
+| Subjective HR | `heart_racing` + no monitor | +5 |
 | Heart rate | Zone 2 | +8 |
-| Heart rate | Zone 3 | +20 |
+| Heart rate | Zone 2 + `has_heart_failure` | +15 |
+| Heart rate | Zone 3 | +30 |
+| Heart rate | Zone 3 + `has_heart_failure` | +40 |
 | Blood pressure | Zone 2 | +8 |
 | Blood pressure | Zone 3 | +20 |
 | Thinking | Level 2 | +8 |
 | Breathing | Level 2 | +8 |
+| Breathing | Level 2 + `has_lung_condition` or `has_heart_failure` | +16 |
 | Urine appearance | Level 2 | +15 |
-| Urine appearance | Level 3 | +40 |
-| UTI symptoms | Unchanged | +10 |
-| UTI symptoms | Worsened | +30 |
-| Urine output | Level 2 | +8 |
-| Urine output | Level 3 | +40 |
-| Cough | Present | +3 |
-| Pneumonia | Worsening | +5 |
+| Urine appearance | Level 3 | +60 |
+| UTI symptoms | Unchanged (`has_recent_uti`) | +10 |
+| UTI symptoms | Unchanged + `has_urinary_catheter` | +18 |
+| UTI symptoms | Worsened (`has_recent_uti`) | +30 |
+| UTI symptoms | Worsened + `has_urinary_catheter` | +40 |
+| Cough | Present, clear/no mucus | +3 |
+| Mucus | Level 2 (yellow/green) | +10 |
+| Mucus | Level 2 + `has_lung_condition` | +18 |
+| Mucus | Level 2 + `has_recent_pneumonia` | +10 additional |
+| Mucus | Level 3 (brown/pink/red) | +30 |
+| Mucus | Level 3 + `has_lung_condition` | +35 |
+| Mucus | Level 3 + `has_recent_pneumonia` | +10 additional |
 | Wound | Level 2 (different) | +10 |
-| Wound | Level 3 (infected) | +40 |
+| Wound | Level 3 (infected) | +60 |
 | GI symptoms | Present | +5 |
+| **Context bonus** | Discharged ≤7 days ago | +15 |
+| **Context bonus** | Discharged 8–30 days ago | +8 |
+| **Context bonus** | Discharged 31–90 days ago | +3 |
+| **Context bonus** | Prior septic shock history | +10 |
 
 ---
 
@@ -593,14 +614,11 @@ Where priority order is: GREEN < YELLOW < RED < RED_EMERGENCY
 
 | Condition | Result |
 |-----------|--------|
-| Emergency question = true | RED_EMERGENCY |
-| Hard override triggered | RED_EMERGENCY |
+| Emergency question triggered (Step 1) | RED_EMERGENCY |
+| Hard vital sign override triggered (Step 2) | RED_EMERGENCY |
 | Pattern = RED_EMERGENCY | RED_EMERGENCY |
-| criticalFlags ≥ 2 | RED |
-| totalScore ≥ 60 | RED |
-| totalScore ≥ 30 AND criticalFlags ≥ 1 | RED |
+| `totalScore ≥ 60` | RED |
 | Pattern = RED | RED |
-| totalScore ≥ 30 | YELLOW |
-| criticalFlags ≥ 1 | YELLOW |
+| `totalScore ≥ 30` | YELLOW |
 | Pattern = YELLOW | YELLOW |
 | Otherwise | GREEN |
