@@ -53,6 +53,16 @@ export interface ValidationRules {
 }
 
 /**
+ * Trigger condition - defines exactly when a businessLogic action fires
+ * Used by the check-in page to know which answer value(s) should trigger
+ * an emergency alert, survey termination, etc.
+ */
+export interface TriggerCondition {
+  operator: '==' | '!=' | '>' | '<' | '>=' | '<=';
+  value: string | number | boolean;
+}
+
+/**
  * Business logic metadata - for documentation and special handling
  */
 export interface BusinessLogic {
@@ -61,6 +71,7 @@ export interface BusinessLogic {
   terminationMessage?: string;              // Message to show on termination
   requiresEmergencyAlert?: boolean;         // Trigger 911 call prompt
   requiresUrgentAlert?: boolean;            // Trigger PCP contact prompt
+  triggerWhen?: TriggerCondition;           // Condition that activates this businessLogic
   calculatesZone?: boolean;                 // Auto-calculate green/yellow/red zone
   zoneField?: string;                       // Database field for zone storage
   autoFlags?: string[];                     // Fields to auto-populate based on answer

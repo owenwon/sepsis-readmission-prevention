@@ -22,6 +22,7 @@ export const dailyCheckInQuestions: Question[] = [
       terminatesSurvey: true,
       terminationMessage: 'CALL 911 IMMEDIATELY',
       requiresEmergencyAlert: true,
+      triggerWhen: { operator: '==', value: true },
     },
   },
 
@@ -44,6 +45,7 @@ export const dailyCheckInQuestions: Question[] = [
       terminatesSurvey: true,
       terminationMessage: 'CALL 911 IMMEDIATELY',
       requiresEmergencyAlert: true,
+      triggerWhen: { operator: '==', value: 3 },
     },
   },
 
@@ -66,6 +68,7 @@ export const dailyCheckInQuestions: Question[] = [
       terminatesSurvey: true,
       terminationMessage: 'CALL 911 IMMEDIATELY',
       requiresEmergencyAlert: true,
+      triggerWhen: { operator: '==', value: 3 },
     },
   },
 
@@ -83,6 +86,7 @@ export const dailyCheckInQuestions: Question[] = [
       terminatesSurvey: true,
       terminationMessage: 'CALL 911 IMMEDIATELY',
       requiresEmergencyAlert: true,
+      triggerWhen: { operator: '==', value: true },
     },
   },
 
@@ -99,6 +103,7 @@ export const dailyCheckInQuestions: Question[] = [
       terminatesSurvey: true,
       terminationMessage: 'CALL 911 IMMEDIATELY - Skin discoloration indicates poor perfusion or hypoxia',
       requiresEmergencyAlert: true,
+      triggerWhen: { operator: '==', value: true },
     },
   },
 
@@ -195,6 +200,7 @@ export const dailyCheckInQuestions: Question[] = [
       terminatesSurvey: true,
       terminationMessage: 'CALL 911 IMMEDIATELY - Temperature is dangerously high',
       requiresEmergencyAlert: true,
+      triggerWhen: { operator: '>=', value: 103.5 },
     },
   },
 
@@ -225,6 +231,7 @@ export const dailyCheckInQuestions: Question[] = [
       terminatesSurvey: true,
       terminationMessage: 'CALL 911 IMMEDIATELY - Oxygen level is dangerously low',
       requiresEmergencyAlert: true,
+      triggerWhen: { operator: '<', value: 90 },
     },
   },
 
@@ -270,6 +277,7 @@ export const dailyCheckInQuestions: Question[] = [
       terminatesSurvey: true,
       terminationMessage: 'CALL 911 IMMEDIATELY - Heart rate is dangerously high',
       requiresEmergencyAlert: true,
+      triggerWhen: { operator: '>', value: 140 },
     },
   },
 
