@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useMemo } from "react";
+import { useRouter } from "next/navigation";
 import { onboardingQuestions } from "@/lib/questions";
 import type { Question } from "@/lib/questions/types";
 
@@ -24,9 +25,12 @@ const colors = {
 // Main page
 // ============================================================================
 export default function OnboardingPage() {
+  const router = useRouter();
   const [answers, setAnswers] = useState<Record<string, any>>({});
   const [currentIndex, setCurrentIndex] = useState(0);
   const [finished, setFinished] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
 
   // Determine user mode from first question answer
   const isCaregiver = answers["user_type"] === "caregiver";
@@ -87,8 +91,23 @@ export default function OnboardingPage() {
       // also store the mapped field values so prerequisites can reference them
       if (question.businessLogic?.mapToMultipleFields && question.businessLogic.customMapping) {
         const mapped = question.businessLogic.customMapping(value);
+        // Object.assign intentionally overwrites existing keys in `updated`.
+        // This is load-bearing: some customMappings (e.g. caregiver_availability)
+        // write back to fields owned by earlier questions (e.g. has_caregiver) in
+        // order to keep logically dependent columns consistent. Do not change this
+        // to a non-overwriting merge or the has_caregiver correction in
+        // caregiver_availability's customMapping will stop working silently.
         Object.assign(updated, mapped);
-        updated[question.id] = value;
+
+        // Only re-store the raw UI value under question.id if the customMapping
+        // did NOT already write a clean value for that key. Unconditionally writing
+        // updated[question.id] = value would overwrite null-sentinel mappings with
+        // the raw string 'none', which crashes Postgres INTEGER columns.
+        // Questions where question.id is not a mapped key still need this line to
+        // preserve the raw selection for UI state (selected option highlighting).
+        if (!Object.prototype.hasOwnProperty.call(mapped, question.id)) {
+          updated[question.id] = value;
+        }
       }
 
       // For simple single-field schema mappings, also store by schemaField name
@@ -101,12 +120,32 @@ export default function OnboardingPage() {
     });
   };
 
-  const handleContinue = () => {
+  const handleContinue = async () => {
     if (!hasAnswer) return;
     if (currentIndex < totalQuestions - 1) {
       setCurrentIndex(currentIndex + 1);
     } else {
-      setFinished(true);
+      // Last question — submit to API
+      setSubmitting(true);
+      setSubmitError(null);
+      try {
+        const res = await fetch("/api/onboarding", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(answers),
+        });
+        if (res.ok) {
+          setFinished(true);
+          setTimeout(() => router.push("/dashboard"), 1500);
+        } else {
+          const data = await res.json();
+          setSubmitError(data.error ?? "Failed to save onboarding data.");
+          setSubmitting(false);
+        }
+      } catch (err: any) {
+        setSubmitError(err.message ?? "Network error. Please try again.");
+        setSubmitting(false);
+      }
     }
   };
 
@@ -226,18 +265,27 @@ export default function OnboardingPage() {
         />
       </div>
 
-      {/* ---- Bottom: continue button ---- */}
-      <button
-        onClick={handleContinue}
-        disabled={!hasAnswer}
-        className={`flex h-[50px] w-full max-w-[430px] cursor-pointer items-center justify-center rounded-[14px] px-6 py-[5px] text-lg font-semibold transition-colors duration-200 ${
-          hasAnswer
-            ? `${colors.primaryBg} text-white`
-            : `${colors.disabledBg} ${colors.disabledText} cursor-default`
-        }`}
-      >
-        {currentIndex === totalQuestions - 1 ? "Finish" : "Continue"}
-      </button>
+      {/* ---- Bottom: error + continue button ---- */}
+      <div className="flex w-full max-w-[430px] flex-col gap-2">
+        {submitError && (
+          <p className="text-center text-sm text-red-600">{submitError}</p>
+        )}
+        <button
+          onClick={handleContinue}
+          disabled={submitting || !hasAnswer}
+          className={`flex h-[50px] w-full cursor-pointer items-center justify-center rounded-[14px] px-6 py-[5px] text-lg font-semibold transition-colors duration-200 ${
+            hasAnswer && !submitting
+              ? `${colors.primaryBg} text-white`
+              : `${colors.disabledBg} ${colors.disabledText} cursor-default`
+          }`}
+        >
+          {submitting
+            ? "Saving..."
+            : currentIndex === totalQuestions - 1
+              ? "Finish"
+              : "Continue"}
+        </button>
+      </div>
     </div>
   );
 }

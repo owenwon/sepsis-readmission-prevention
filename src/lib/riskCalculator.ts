@@ -80,9 +80,12 @@ export interface SurveyResponse {
   has_urinary_catheter?: boolean;       // Currently has urinary catheter
 }
 
-// Zone fields are computed at runtime by calculateZones() and stored here locally —
-// they are NOT persisted to the database schema.
-interface ComputedZones {
+// Zone fields are computed at runtime by calculateZones() and returned in
+// RiskCalculationResult so the caller can include them in the DB payload.
+// The DB enforces zone_consistency_* CHECK constraints that require each
+// zone column to be non-null whenever its corresponding value column is
+// non-null (e.g. blood_pressure_zone must accompany blood_pressure_systolic).
+export interface ComputedZones {
   temperature_zone?: number;
   oxygen_level_zone?: number;
   heart_rate_zone?: number;
@@ -97,6 +100,11 @@ export interface RiskCalculationResult {
   highRiskModifierApplied: boolean;
   reasoning: string[];
   emergencyMessage?: string;
+  // zones is included so callers can spread it into the DB payload alongside
+  // risk_level. Without this, the zone_consistency_* constraints on
+  // daily_checkins will reject any row where a value was measured but its
+  // zone was not stored (e.g. blood_pressure_systolic present, blood_pressure_zone absent).
+  zones: ComputedZones;
 }
 
 function calculateZones(response: SurveyResponse): ComputedZones {
@@ -163,14 +171,14 @@ function calculateZones(response: SurveyResponse): ComputedZones {
 /**
  * STEP 1: Check for immediate emergency conditions
  */
-function checkEmergencyConditions(response: SurveyResponse): RiskCalculationResult | null {
+function checkEmergencyConditions(response: SurveyResponse, zones: ComputedZones): RiskCalculationResult | null {
   const reasoning: string[] = [];
 
   if (response.fainted_or_very_dizzy) {
     reasoning.push('EMERGENCY: Patient has fainted or is very dizzy');
     return {
       riskLevel: 'RED_EMERGENCY', totalScore: 1000, baseScore: 0, interactionScore: 0,
-      highRiskModifierApplied: false, reasoning,
+      highRiskModifierApplied: false, reasoning, zones,
       emergencyMessage: 'CALL 911 IMMEDIATELY - Patient has fainted or is very dizzy'
     };
   }
@@ -179,7 +187,7 @@ function checkEmergencyConditions(response: SurveyResponse): RiskCalculationResu
     reasoning.push('EMERGENCY: Patient has severe trouble breathing');
     return {
       riskLevel: 'RED_EMERGENCY', totalScore: 1000, baseScore: 0, interactionScore: 0,
-      highRiskModifierApplied: false, reasoning,
+      highRiskModifierApplied: false, reasoning, zones,
       emergencyMessage: 'CALL 911 IMMEDIATELY - Severe breathing trouble'
     };
   }
@@ -188,7 +196,7 @@ function checkEmergencyConditions(response: SurveyResponse): RiskCalculationResu
     reasoning.push('EMERGENCY: Patient is severely confused or not making sense');
     return {
       riskLevel: 'RED_EMERGENCY', totalScore: 1000, baseScore: 0, interactionScore: 0,
-      highRiskModifierApplied: false, reasoning,
+      highRiskModifierApplied: false, reasoning, zones,
       emergencyMessage: 'CALL 911 IMMEDIATELY - Severe confusion'
     };
   }
@@ -197,7 +205,7 @@ function checkEmergencyConditions(response: SurveyResponse): RiskCalculationResu
     reasoning.push('EMERGENCY: Patient has extreme heat or shaking chills');
     return {
       riskLevel: 'RED_EMERGENCY', totalScore: 1000, baseScore: 0, interactionScore: 0,
-      highRiskModifierApplied: false, reasoning,
+      highRiskModifierApplied: false, reasoning, zones,
       emergencyMessage: 'CALL 911 IMMEDIATELY - Extreme heat or shaking chills'
     };
   }
@@ -206,7 +214,7 @@ function checkEmergencyConditions(response: SurveyResponse): RiskCalculationResu
     reasoning.push('EMERGENCY: Skin, lips, or nails discolored - indicates mottling, cyanosis, or jaundice');
     return {
       riskLevel: 'RED_EMERGENCY', totalScore: 1000, baseScore: 0, interactionScore: 0,
-      highRiskModifierApplied: false, reasoning,
+      highRiskModifierApplied: false, reasoning, zones,
       emergencyMessage: 'CALL 911 IMMEDIATELY - Skin discoloration indicates poor perfusion or hypoxia'
     };
   }
@@ -224,7 +232,7 @@ function checkHardRedOverrides(response: SurveyResponse, zones: ComputedZones): 
     reasoning.push(`CRITICAL: Temperature ${response.temperature_value}°F (≥103.5°F threshold)`);
     return {
       riskLevel: 'RED_EMERGENCY', totalScore: 1000, baseScore: 0, interactionScore: 0,
-      highRiskModifierApplied: false, reasoning,
+      highRiskModifierApplied: false, reasoning, zones,
       emergencyMessage: 'CALL 911 IMMEDIATELY - Dangerously high temperature'
     };
   }
@@ -233,7 +241,7 @@ function checkHardRedOverrides(response: SurveyResponse, zones: ComputedZones): 
     reasoning.push(`CRITICAL: Oxygen level ${response.oxygen_level_value}% (<90% threshold)`);
     return {
       riskLevel: 'RED_EMERGENCY', totalScore: 1000, baseScore: 0, interactionScore: 0,
-      highRiskModifierApplied: false, reasoning,
+      highRiskModifierApplied: false, reasoning, zones,
       emergencyMessage: 'CALL 911 IMMEDIATELY - Dangerously low oxygen level'
     };
   }
@@ -242,7 +250,7 @@ function checkHardRedOverrides(response: SurveyResponse, zones: ComputedZones): 
     reasoning.push(`CRITICAL: Heart rate ${response.heart_rate_value} bpm (>140 bpm threshold)`);
     return {
       riskLevel: 'RED_EMERGENCY', totalScore: 1000, baseScore: 0, interactionScore: 0,
-      highRiskModifierApplied: false, reasoning,
+      highRiskModifierApplied: false, reasoning, zones,
       emergencyMessage: 'CALL 911 IMMEDIATELY - Dangerously high heart rate'
     };
   }
@@ -251,7 +259,7 @@ function checkHardRedOverrides(response: SurveyResponse, zones: ComputedZones): 
     reasoning.push('CRITICAL: Extremely difficult breathing, major shortness of breath');
     return {
       riskLevel: 'RED_EMERGENCY', totalScore: 1000, baseScore: 0, interactionScore: 0,
-      highRiskModifierApplied: false, reasoning,
+      highRiskModifierApplied: false, reasoning, zones,
       emergencyMessage: 'CALL 911 IMMEDIATELY - Extreme breathing difficulty'
     };
   }
@@ -260,7 +268,7 @@ function checkHardRedOverrides(response: SurveyResponse, zones: ComputedZones): 
     reasoning.push('CRITICAL: Patient is not making sense, severe altered mental status');
     return {
       riskLevel: 'RED_EMERGENCY', totalScore: 1000, baseScore: 0, interactionScore: 0,
-      highRiskModifierApplied: false, reasoning,
+      highRiskModifierApplied: false, reasoning, zones,
       emergencyMessage: 'CALL 911 IMMEDIATELY - Severe mental status change'
     };
   }
@@ -269,7 +277,7 @@ function checkHardRedOverrides(response: SurveyResponse, zones: ComputedZones): 
     reasoning.push(`CRITICAL: Blood pressure ${response.blood_pressure_systolic} mmHg - severe hypotension or hypertensive crisis`);
     return {
       riskLevel: 'RED_EMERGENCY', totalScore: 1000, baseScore: 0, interactionScore: 0,
-      highRiskModifierApplied: false, reasoning,
+      highRiskModifierApplied: false, reasoning, zones,
       emergencyMessage: 'CALL 911 IMMEDIATELY - Dangerously abnormal blood pressure'
     };
   }
@@ -680,7 +688,9 @@ export function calculateSepsisRisk(response: SurveyResponse): RiskCalculationRe
   const zones = calculateZones(response);
 
   // STEP 1: Emergency conditions
-  const emergency = checkEmergencyConditions(response);
+  // zones is passed in so early-exit returns can include it in the result,
+  // satisfying the zone_consistency_* DB constraints even on emergency paths.
+  const emergency = checkEmergencyConditions(response, zones);
   if (emergency) return emergency;
 
   // STEP 2: Hard RED overrides
@@ -701,10 +711,10 @@ export function calculateSepsisRisk(response: SurveyResponse): RiskCalculationRe
       totalScore: 1000,
       baseScore: 0,
       interactionScore: 0,
-      
       highRiskModifierApplied: false,
       reasoning: allReasoning,
-      emergencyMessage: patternResult.escalationReason
+      emergencyMessage: patternResult.escalationReason,
+      zones,
     };
   }
 
@@ -767,9 +777,14 @@ export function calculateSepsisRisk(response: SurveyResponse): RiskCalculationRe
     totalScore,
     baseScore,
     interactionScore: 0,
-    
     highRiskModifierApplied: highRiskModifier,
     reasoning: allReasoning,
-    emergencyMessage
+    emergencyMessage,
+    // zones must be included so the caller can spread it into the DB payload.
+    // The daily_checkins table has zone_consistency_* CHECK constraints that
+    // require e.g. blood_pressure_zone to be non-null whenever
+    // blood_pressure_systolic is non-null. Without returning zones here,
+    // the caller has no way to satisfy those constraints.
+    zones,
   };
 }

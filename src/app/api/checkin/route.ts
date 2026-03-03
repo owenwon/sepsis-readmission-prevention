@@ -1,269 +1,176 @@
-// app/api/checkin/route.ts
-import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@supabase/supabase-js';
-import { calculateSepsisRisk, SurveyResponse } from '@/lib/riskCalculator';
+import { NextRequest, NextResponse } from "next/server";
+import { createClient } from "@/lib/supabase/server";
+
+const VALID_RISK_LEVELS = ["GREEN", "YELLOW", "RED", "RED_EMERGENCY"] as const;
+
+const ALLOWED_COLUMNS = [
+  "fainted_or_very_dizzy",
+  "extreme_heat_or_chills",
+  "discolored_skin",
+  "overall_feeling",
+  "energy_level",
+  "pain_level",
+  "fever_chills",
+  "temperature_value",
+  "temperature_zone",
+  "oxygen_level_value",
+  "oxygen_level_zone",
+  "heart_racing",
+  "heart_rate_value",
+  "heart_rate_zone",
+  "blood_pressure_systolic",
+  "blood_pressure_zone",
+  "thinking_level",
+  "breathing_level",
+  "urine_appearance_level",
+  "uti_symptoms_worsening",
+  "has_cough",
+  "mucus_color_level",
+  "wound_state_level",
+  "nausea_vomiting_diarrhea",
+  "additional_notes",
+  "risk_level",
+] as const;
 
 export async function POST(req: NextRequest) {
   try {
-    // -------------------------------------------------------------------------
-    // 1. AUTHENTICATE
-    // Pull the user's JWT from the Authorization header and verify it with
-    // Supabase. This means even if someone hits this endpoint directly, they
-    // must be a real logged-in user — RLS alone isn't enough since we're using
-    // the service role key to write (see note below).
-    // -------------------------------------------------------------------------
-    const authHeader = req.headers.get('Authorization');
-    if (!authHeader?.startsWith('Bearer ')) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
-    const jwt = authHeader.replace('Bearer ', '');
+    // 1. Authenticate
+    const supabase = await createClient();
+    const {
+      data: { user },
+      error: authError,
+    } = await supabase.auth.getUser();
 
-    // Use anon client just to verify the JWT and get the user
-    const anonClient = createClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-    );
-    const { data: { user }, error: authError } = await anonClient.auth.getUser(jwt);
     if (authError || !user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    // -------------------------------------------------------------------------
-    // 2. PARSE & VALIDATE REQUEST BODY
-    // Basic shape check — TypeScript types don't exist at runtime so we do a
-    // minimal sanity check on the fields the calculator actually requires.
-    // -------------------------------------------------------------------------
+    // 2. Parse body
     const body = await req.json();
-    const { surveyResponse, patientId } = body as {
-      surveyResponse: SurveyResponse;
-      patientId: string;
-    };
+    const answers: Record<string, any> = body.answers ?? {};
 
-    if (!surveyResponse || !patientId) {
+    // 3. Look up patient_id for this user
+    const { data: patient, error: patientError } = await supabase
+      .from("patients")
+      .select("patient_id")
+      .eq("user_id", user.id)
+      .single();
+
+    if (patientError || !patient) {
       return NextResponse.json(
-        { error: 'Missing surveyResponse or patientId' },
+        { error: "Patient record not found. Please complete onboarding first." },
+        { status: 404 }
+      );
+    }
+
+    // 4. Validate risk_level
+    const riskLevel = answers.risk_level;
+    if (
+      !riskLevel ||
+      !(VALID_RISK_LEVELS as readonly string[]).includes(riskLevel)
+    ) {
+      return NextResponse.json(
+        { error: "risk_level is required and must be one of GREEN, YELLOW, RED, RED_EMERGENCY." },
         { status: 400 }
       );
     }
 
-    // Required boolean fields — if any are missing the calculator will behave
-    // unpredictably, so reject early.
-    const requiredFields: (keyof SurveyResponse)[] = [
-      'fainted_or_very_dizzy',
-      'extreme_heat_or_chills',
-      'discolored_skin',
-      'energy_level',
-      'fever_chills',
-      'has_thermometer',
-      'has_pulse_oximeter',
-      'heart_racing',
-      'has_hr_monitor',
-      'has_bp_cuff',
-      'thinking_level',
-      'breathing_level',
-      'urine_appearance_level',
-      'has_recent_uti',
-      'has_cough',
-      'has_recent_pneumonia',
-      'nausea_vomiting_diarrhea',
-      'has_weakened_immune',
-      'admitted_count',
-    ];
-    for (const field of requiredFields) {
-      if (surveyResponse[field] === undefined || surveyResponse[field] === null) {
+    // 5. Pick only allowed columns
+    const payload: Record<string, any> = {
+      patient_id: patient.patient_id,
+      checkin_date: new Date().toISOString().split("T")[0],
+    };
+
+    for (const col of ALLOWED_COLUMNS) {
+      if (answers[col] !== undefined) {
+        payload[col] = answers[col];
+      }
+    }
+
+    // Guard: uti_symptoms_worsening must match the uti_symptoms_type Postgres enum exactly.
+    // Any other value (including null or an empty string) would cause a DB type error.
+    // We delete the key rather than rejecting the request because this field is
+    // optional and only populated when has_recent_uti = true on the patient record.
+    const VALID_UTI_SYMPTOMS = ['improved', 'same', 'worsened', 'not_applicable'] as const;
+    if (
+      payload.uti_symptoms_worsening !== undefined &&
+      !VALID_UTI_SYMPTOMS.includes(payload.uti_symptoms_worsening)
+    ) {
+      delete payload.uti_symptoms_worsening;
+    }
+
+    // Numeric range guards — each range mirrors the CHECK constraint on the DB column exactly.
+    // The route never trusted the client to enforce these; now it does so server-side
+    // before the upsert, returning a 400 instead of letting Postgres throw a 500.
+    const NUMERIC_RANGES: Record<string, [number, number]> = {
+      overall_feeling:         [1,    5  ],  // CHECK (overall_feeling BETWEEN 1 AND 5)
+      energy_level:            [1,    3  ],  // CHECK (energy_level BETWEEN 1 AND 3)
+      pain_level:              [0,    10 ],  // CHECK (pain_level BETWEEN 0 AND 10)
+      thinking_level:          [1,    3  ],  // CHECK (thinking_level BETWEEN 1 AND 3)
+      breathing_level:         [1,    3  ],  // CHECK (breathing_level BETWEEN 1 AND 3)
+      temperature_value:       [90.0, 110.0],// CHECK (temperature_value >= 90 AND <= 110)
+      oxygen_level_value:      [0,    100 ], // CHECK (oxygen_level_value >= 0 AND <= 100)
+      heart_rate_value:        [30,   250 ], // CHECK (heart_rate_value >= 30 AND <= 250)
+      blood_pressure_systolic: [60,   250 ], // CHECK (blood_pressure_systolic >= 60 AND <= 250)
+      urine_appearance_level:  [1,    3  ],  // CHECK (urine_appearance_level BETWEEN 1 AND 3)
+      mucus_color_level:       [1,    3  ],  // CHECK (mucus_color_level BETWEEN 1 AND 3)
+      wound_state_level:       [1,    3  ],  // CHECK (wound_state_level BETWEEN 1 AND 3)
+    };
+
+    for (const [col, [min, max]] of Object.entries(NUMERIC_RANGES)) {
+      if (payload[col] !== undefined && 
+          payload[col] !== null &&   
+         (payload[col] < min || 
+          payload[col] > max)) {
         return NextResponse.json(
-          { error: `Missing required field: ${field}` },
+          { error: `${col} must be between ${min} and ${max}.` },
           { status: 400 }
         );
       }
     }
 
-    // -------------------------------------------------------------------------
-    // 3. VERIFY PATIENT BELONGS TO THIS USER
-    // The service role key bypasses RLS, so we must manually confirm the
-    // patient_id in the request belongs to the authenticated user before
-    // writing anything.
-    // -------------------------------------------------------------------------
-    const serviceClient = createClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.SUPABASE_SERVICE_ROLE_KEY!
+    // Consistency guard: certain symptom values are unconditional RED_EMERGENCY triggers
+    // as defined in the business logic of dailyCheckIn.ts. If any of these reach the
+    // route with a non-RED_EMERGENCY risk_level, the data would be internally inconsistent
+    // and could suppress a critical alert in downstream queries. Reject rather than silently store.
+    const hardEmergencyTriggered =
+      payload.fainted_or_very_dizzy    === true ||
+      payload.extreme_heat_or_chills   === true ||
+      payload.discolored_skin          === true ||
+      payload.breathing_level          === 3    ||
+      payload.thinking_level           === 3;
+
+    if (hardEmergencyTriggered && payload.risk_level !== 'RED_EMERGENCY') {
+      return NextResponse.json(
+        {
+          error:
+            'risk_level must be RED_EMERGENCY when any hard-trigger symptom is present ' +
+            '(fainted_or_very_dizzy, extreme_heat_or_chills, discolored_skin, ' +
+            'breathing_level = 3, or thinking_level = 3).',
+        },
+        { status: 400 }
+      );
+    }
+
+    // 6. Upsert into daily_checkins
+    const { data, error } = await supabase
+      .from("daily_checkins")
+      .upsert(payload, { onConflict: "patient_id,checkin_date" })
+      .select("daily_checkin_id")
+      .single();
+
+    if (error) {
+      return NextResponse.json({ error: error.message }, { status: 500 });
+    }
+
+    return NextResponse.json(
+      { daily_checkin_id: data.daily_checkin_id },
+      { status: 200 }
     );
-
-    const { data: patient, error: patientError } = await serviceClient
-      .from('patients')
-      .select('patient_id, user_id, age, days_since_last_discharge')
-      .eq('patient_id', patientId)
-      .single();
-
-    if (patientError || !patient) {
-      return NextResponse.json({ error: 'Patient not found' }, { status: 404 });
-    }
-
-    if (patient.user_id !== user.id) {
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
-    }
-
-    // -------------------------------------------------------------------------
-    // 4. RUN THE RISK CALCULATOR (server-side)
-    // This is the entire point of doing this server-side: the client cannot
-    // tamper with the risk_level stored in the DB because we always recompute
-    // it here from the raw survey inputs.
-    //
-    // We also merge in patient context from the DB so the client doesn't need
-    // to send fields like age or days_since_last_discharge — we pull them from
-    // the source of truth.
-    // -------------------------------------------------------------------------
-    const enrichedResponse: SurveyResponse = {
-      ...surveyResponse,
-      // Override with DB values so client can't spoof these
-      age: patient.age ?? surveyResponse.age,
-      days_since_last_discharge:
-        patient.days_since_last_discharge ?? surveyResponse.days_since_last_discharge,
-    };
-
-    const result = calculateSepsisRisk(enrichedResponse);
-
-    // -------------------------------------------------------------------------
-    // 5. COMPUTE ZONES
-    // The DB stores pre-computed zones alongside raw values for efficient
-    // querying (e.g. "show me all RED zone oxygen readings this week").
-    // We derive them from the same inputs the calculator used.
-    // -------------------------------------------------------------------------
-    const zones = computeZones(surveyResponse);
-
-    // -------------------------------------------------------------------------
-    // 6. INSERT DAILY CHECK-IN
-    // Map survey fields to DB columns. Zone fields are stored alongside raw
-    // values. risk_level comes from the server-side calculation above.
-    // -------------------------------------------------------------------------
-    const checkinRow = {
-      patient_id: patientId,
-      checkin_date: new Date().toISOString().split('T')[0], // YYYY-MM-DD
-
-      // Immediate danger
-      fainted_or_very_dizzy: surveyResponse.fainted_or_very_dizzy,
-      extreme_heat_or_chills: surveyResponse.extreme_heat_or_chills,
-      discolored_skin: surveyResponse.discolored_skin,
-
-      // Energy & well-being
-      overall_feeling: surveyResponse.overall_feeling ?? null,
-      energy_level: surveyResponse.energy_level,
-      pain_level: surveyResponse.pain_level ?? null,
-
-      // Temperature
-      fever_chills: surveyResponse.fever_chills,
-      temperature_value: surveyResponse.temperature_value ?? null,
-      temperature_zone: zones.temperature_zone ?? null,
-
-      // Oxygen
-      oxygen_level_value: surveyResponse.oxygen_level_value ?? null,
-      oxygen_level_zone: zones.oxygen_level_zone ?? null,
-
-      // Heart rate
-      heart_racing: surveyResponse.heart_racing,
-      heart_rate_value: surveyResponse.heart_rate_value ?? null,
-      heart_rate_zone: zones.heart_rate_zone ?? null,
-
-      // Blood pressure
-      blood_pressure_systolic: surveyResponse.blood_pressure_systolic ?? null,
-      blood_pressure_zone: zones.blood_pressure_zone ?? null,
-
-      // Mental status & breathing
-      thinking_level: surveyResponse.thinking_level,
-      breathing_level: surveyResponse.breathing_level,
-
-      // Urine
-      urine_appearance_level: surveyResponse.urine_appearance_level,
-      uti_symptoms_worsening: surveyResponse.uti_symptoms_worsening ?? 'not_applicable',
-
-      // Infection
-      has_cough: surveyResponse.has_cough,
-      mucus_color_level: surveyResponse.mucus_color_level ?? null,
-      wound_state_level:
-        surveyResponse.wound_state_level === 'none' ? null : surveyResponse.wound_state_level ?? null,
-
-      // GI
-      nausea_vomiting_diarrhea: surveyResponse.nausea_vomiting_diarrhea,
-
-      // Notes
-      additional_notes: surveyResponse.additional_notes ?? null,
-
-      // Computed risk level — always from server calculation, never trusted from client
-      risk_level: result.riskLevel,
-    };
-
-    const { data: checkin, error: insertError } = await serviceClient
-      .from('daily_checkins')
-      .insert(checkinRow)
-      .select('daily_checkin_id, risk_level, checkin_date')
-      .single();
-
-    if (insertError) {
-      console.error('Checkin insert error:', insertError);
-      // Handle duplicate (patient already checked in today)
-      if (insertError.code === '23505') {
-        return NextResponse.json(
-          { error: 'You have already submitted a check-in today.' },
-          { status: 409 }
-        );
-      }
-      return NextResponse.json({ error: 'Failed to save check-in' }, { status: 500 });
-    }
-
-    // -------------------------------------------------------------------------
-    // 7. RETURN RESULT TO CLIENT
-    // Return enough for the UI to show the risk level and reasoning, but do NOT
-    // return internal score details to the client in production — they're not
-    // needed and expose algorithm internals.
-    // -------------------------------------------------------------------------
-    return NextResponse.json({
-      success: true,
-      checkinId: checkin.daily_checkin_id,
-      riskLevel: result.riskLevel,
-      emergencyMessage: result.emergencyMessage ?? null,
-      reasoning: result.reasoning,
-    });
-
-  } catch (err) {
-    console.error('Unexpected error in /api/checkin:', err);
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
+  } catch (err: any) {
+    return NextResponse.json(
+      { error: err.message ?? "Internal server error" },
+      { status: 500 }
+    );
   }
-}
-
-// ---------------------------------------------------------------------------
-// ZONE COMPUTATION (mirrors calculateZones in riskCalculator.ts)
-// Kept here separately so the API route can store zones in the DB without
-// exposing or importing the private calculateZones function from the calculator.
-// ---------------------------------------------------------------------------
-function computeZones(r: SurveyResponse) {
-  const zones: {
-    temperature_zone?: number;
-    oxygen_level_zone?: number;
-    heart_rate_zone?: number;
-    blood_pressure_zone?: number;
-  } = {};
-
-  if (r.temperature_value !== undefined) {
-    const t = r.temperature_value;
-    zones.temperature_zone = t >= 96.8 && t <= 99.9 ? 1 : t >= 100 && t <= 101.4 ? 2 : 3;
-  }
-
-  if (r.oxygen_level_value !== undefined) {
-    const o = r.oxygen_level_value;
-    zones.oxygen_level_zone = o >= 95 ? 1 : o >= 92 ? 2 : 3;
-  }
-
-  if (r.heart_rate_value !== undefined) {
-    const h = r.heart_rate_value;
-    zones.heart_rate_zone = h >= 60 && h <= 100 ? 1 : h >= 101 && h <= 120 ? 2 : 3;
-  }
-
-  if (r.blood_pressure_systolic !== undefined) {
-    const bp = r.blood_pressure_systolic;
-    const baseline = r.baseline_bp_systolic || 120;
-    zones.blood_pressure_zone =
-      bp < 90 || bp > 180 || bp < baseline - 40 ? 3 : bp < baseline - 20 ? 2 : 1;
-  }
-
-  return zones;
 }

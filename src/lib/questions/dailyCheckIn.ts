@@ -372,7 +372,7 @@ export const dailyCheckInQuestions: Question[] = [
   // ============================================================================
 
   {
-    id: 'has_cough',
+    id: 'cough_mucus_selection',
     section: 'Infection',
     patientText: 'If you have a cough, what color is your mucus?',
     caregiverText: "If the patient has a cough, what color is their mucus?",
@@ -393,16 +393,20 @@ export const dailyCheckInQuestions: Question[] = [
         // UI values are unique (1,2,3,4) for React keys / selection,
         // but clinical levels need 1,2,2,3 because yellow and green
         // are the same clinical concern level for the risk calculator
-        const clinicalLevel: Record<string | number, number | null> = {
-          1: 1,    // clear → level 1
-          2: 2,    // yellow → level 2
-          3: 2,    // green → level 2
-          4: 3,    // brown/pink/red → level 3
-          none: null,
+        // All keys are explicit strings so JS object key coercion never produces
+        // an accidental undefined when the value arrives as a string from JSON.
+        const clinicalLevel: Record<string, number | null> = {
+          '1': 1,    // clear/white → clinical level 1
+          '2': 2,    // yellow → clinical level 2
+          '3': 2,    // green → clinical level 2 (same clinical concern as yellow)
+          '4': 3,    // brown/pink/red → clinical level 3
+          'none': null,
         };
         return {
           has_cough: value !== 'none',
-          mucus_color_level: clinicalLevel[value] ?? null,
+          // String(value) normalizes both numeric and string inputs before lookup,
+          // preventing undefined from silently setting mucus_color_level to null.
+          mucus_color_level: clinicalLevel[String(value)] ?? null,
         };
       },
     },
@@ -423,6 +427,15 @@ export const dailyCheckInQuestions: Question[] = [
       { label: 'No wound present', value: 'none' },
     ],
     schemaField: 'wound_state_level',
+    businessLogic: {
+      mapToMultipleFields: true,
+      customMapping: (value: number | string) => ({
+        // Cast to Number so the DB always receives an integer or null.
+        // Without this, the string 'none' could bypass the null guard in some
+        // JS execution paths and be sent directly to the INTEGER column, crashing Postgres.
+        wound_state_level: value === 'none' ? null : Number(value),
+      }),
+    },
   },
 
   {
