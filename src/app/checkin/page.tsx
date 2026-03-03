@@ -2,8 +2,27 @@
 
 import { useState } from "react";
 import { dailyCheckInQuestions } from "@/lib/questions";
-import type { Question } from "@/lib/questions/types";
+import type { Question, QuestionOption } from "@/lib/questions/types";
 
+// ============================================================================
+// Design tokens from Figma
+// ============================================================================
+const colors = {
+  bg: "bg-[#fdfbf5]",
+  primary: "#186346",
+  primaryBg: "bg-[#186346]",
+  optionBg: "bg-[#f4f4f4]",
+  selectedBg: "bg-[#dcf5f0]",
+  selectedBorder: "border-[#186346]",
+  disabledBg: "bg-[#e5e5e0]",
+  disabledText: "text-[#a0a09b]",
+  trackBg: "bg-[#d9d9d9]",
+  trackFill: "bg-[#186346]",
+};
+
+// ============================================================================
+// Main page
+// ============================================================================
 export default function CheckInPage() {
   const [answers, setAnswers] = useState<Record<string, any>>({});
   const [currentIndex, setCurrentIndex] = useState(0);
@@ -13,7 +32,6 @@ export default function CheckInPage() {
   const visibleQuestions = dailyCheckInQuestions.filter((q) => {
     if (q.prerequisites && q.prerequisites.length > 0) {
       return q.prerequisites.every((prereq) => {
-        // Skip onboarding prerequisites — we don't have that data yet
         if (prereq.source === "onboarding") return true;
 
         const answer = answers[prereq.field];
@@ -46,6 +64,9 @@ export default function CheckInPage() {
 
   const currentQuestion = visibleQuestions[currentIndex];
   const totalQuestions = visibleQuestions.length;
+  const currentValue = currentQuestion ? answers[currentQuestion.id] : undefined;
+  const hasAnswer = currentValue !== undefined && currentValue !== "" && currentValue !== null;
+  const progressPct = totalQuestions > 0 ? ((currentIndex + 1) / totalQuestions) * 100 : 0;
 
   const setAnswer = (question: Question, value: any) => {
     setAnswers((prev) => {
@@ -65,7 +86,8 @@ export default function CheckInPage() {
     });
   };
 
-  const handleNext = () => {
+  const handleContinue = () => {
+    if (!hasAnswer) return;
     if (currentIndex < totalQuestions - 1) {
       setCurrentIndex(currentIndex + 1);
     } else {
@@ -73,71 +95,159 @@ export default function CheckInPage() {
     }
   };
 
-  const handleBack = () => {
-    if (currentIndex > 0) {
-      setCurrentIndex(currentIndex - 1);
-    }
+  const handleRestart = () => {
+    setFinished(false);
+    setCurrentIndex(0);
+    setAnswers({});
   };
 
+  // ----- Completion screen -----
   if (finished) {
     return (
-      <div>
-        <h1>Daily Check-In Complete</h1>
-        <p>Here are your answers:</p>
-        <ul>
-          {Object.entries(answers).map(([key, value]) => (
-            <li key={key}>
-              <strong>{key}:</strong>{" "}
-              {Array.isArray(value) ? value.join(", ") : String(value ?? "")}
-            </li>
-          ))}
-        </ul>
-        <button onClick={() => { setFinished(false); setCurrentIndex(0); setAnswers({}); }}>
+      <div className={`${colors.bg} flex min-h-dvh flex-col items-center justify-between px-4 pb-20 pt-2.5`}>
+        <div className="flex w-full max-w-[430px] flex-col gap-6">
+          <div className="flex flex-col items-end">
+            <button
+              onClick={handleRestart}
+              className="cursor-pointer rounded-[9px] bg-[#f4f4f4] px-3 py-[7px] text-xs font-medium text-black"
+            >
+              Restart chat
+            </button>
+          </div>
+
+          {/* Full progress bar */}
+          <div className="flex w-full flex-col gap-4">
+            <div className={`flex w-full items-center rounded-full ${colors.trackBg}`}>
+              <div className={`h-1.5 rounded-full ${colors.trackFill}`} style={{ width: "100%" }} />
+            </div>
+            <h1 className="text-[26px] font-semibold leading-normal text-black">
+              Daily Check-In Complete 🎉
+            </h1>
+            <p className="text-sm text-black/60">Your responses have been recorded. Thank you for checking in today.</p>
+          </div>
+        </div>
+
+        <button
+          onClick={handleRestart}
+          className={`${colors.primaryBg} flex h-[50px] w-full max-w-[430px] cursor-pointer items-center justify-center rounded-[14px] px-6 py-[5px] text-lg font-semibold text-white`}
+        >
           Start Over
         </button>
       </div>
     );
   }
 
+  // ----- No questions fallback -----
   if (!currentQuestion) {
-    return <div>No questions available.</div>;
+    return (
+      <div className={`${colors.bg} flex min-h-dvh items-center justify-center px-4`}>
+        <p className="text-lg text-black/60">No questions available.</p>
+      </div>
+    );
   }
 
-  // Default to patient text (caregiver mode would come from onboarding data later)
   const questionText = currentQuestion.patientText;
   const helpText = currentQuestion.helpText;
 
+  // ----- Main question screen -----
   return (
-    <div>
-      <p>
-        Question {currentIndex + 1} of {totalQuestions} — Section:{" "}
-        {currentQuestion.section}
-      </p>
+    <div className={`${colors.bg} flex min-h-dvh flex-col items-center justify-between px-4 pb-20 pt-2.5`}>
+      {/* ---- Top: restart, progress, question, options ---- */}
+      <div className="flex w-full max-w-[430px] flex-col gap-6">
+        {/* Restart button */}
+        <div className="flex flex-col items-end">
+          <button
+            onClick={handleRestart}
+            className="cursor-pointer rounded-[9px] bg-[#f4f4f4] px-3 py-[7px] text-xs font-medium text-black"
+          >
+            Restart chat
+          </button>
+        </div>
 
-      <h2>{questionText}</h2>
+        {/* Progress bar + question text */}
+        <div className="flex w-full flex-col gap-4">
+          <div className={`flex w-full items-center rounded-full ${colors.trackBg}`}>
+            <div
+              className={`h-1.5 rounded-l-full ${colors.trackFill} transition-all duration-300 ease-out`}
+              style={{ width: `${progressPct}%` }}
+            />
+          </div>
 
-      {helpText && (
-        <p>
-          <em>{helpText}</em>
-        </p>
-      )}
+          <h2 className="text-[26px] font-semibold leading-normal text-black">
+            {questionText}
+          </h2>
 
-      <QuestionInput
-        question={currentQuestion}
-        value={answers[currentQuestion.id]}
-        onChange={(value) => setAnswer(currentQuestion, value)}
-      />
+          {helpText && (
+            <p className="text-sm leading-relaxed text-black/50">{helpText}</p>
+          )}
+        </div>
 
-      <div style={{ marginTop: 20 }}>
-        {currentIndex > 0 && <button onClick={handleBack}>← Back</button>}
-        <button onClick={handleNext} style={{ marginLeft: 10 }}>
-          {currentIndex === totalQuestions - 1 ? "Finish" : "Next →"}
-        </button>
+        {/* Answer options */}
+        <QuestionInput
+          question={currentQuestion}
+          value={currentValue}
+          onChange={(value) => setAnswer(currentQuestion, value)}
+        />
       </div>
+
+      {/* ---- Bottom: continue button ---- */}
+      <button
+        onClick={handleContinue}
+        disabled={!hasAnswer}
+        className={`flex h-[50px] w-full max-w-[430px] cursor-pointer items-center justify-center rounded-[14px] px-6 py-[5px] text-lg font-semibold transition-colors duration-200 ${
+          hasAnswer
+            ? `${colors.primaryBg} text-white`
+            : `${colors.disabledBg} ${colors.disabledText} cursor-default`
+        }`}
+      >
+        {currentIndex === totalQuestions - 1 ? "Finish" : "Continue"}
+      </button>
     </div>
   );
 }
 
+// ============================================================================
+// Shared option‑button component (matches Figma "Button: Option")
+// ============================================================================
+function OptionButton({
+  label,
+  selected,
+  onClick,
+  emoji,
+  description,
+}: {
+  label: string;
+  selected: boolean;
+  onClick: () => void;
+  emoji?: string;
+  description?: string;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      className={`flex w-full cursor-pointer items-center justify-center rounded-[14px] transition-colors duration-150 ${
+        selected
+          ? "bg-[#dcf5f0]"
+          : "bg-[#f4f4f4]"
+      }`}
+    >
+      <div
+        className={`flex h-[50px] flex-1 items-center justify-center overflow-hidden rounded-[14px] px-[19px] py-[13px] ${
+          selected ? "border border-solid border-[#186346]" : ""
+        }`}
+      >
+        <span className="text-center text-lg text-black">
+          {emoji && <span className="mr-2">{emoji}</span>}
+          {label}
+        </span>
+      </div>
+    </button>
+  );
+}
+
+// ============================================================================
+// Question input renderer – styled per Figma
+// ============================================================================
 function QuestionInput({
   question,
   value,
@@ -148,93 +258,64 @@ function QuestionInput({
   onChange: (value: any) => void;
 }) {
   switch (question.type) {
+    // ---- Boolean (Yes / No) ----
     case "boolean":
       return (
-        <div>
-          <button
-            onClick={() => onChange(true)}
-            style={{
-              fontWeight: value === true ? "bold" : "normal",
-              border: value === true ? "2px solid black" : "1px solid gray",
-              padding: "8px 16px",
-              marginRight: 8,
-            }}
-          >
-            Yes
-          </button>
-          <button
-            onClick={() => onChange(false)}
-            style={{
-              fontWeight: value === false ? "bold" : "normal",
-              border: value === false ? "2px solid black" : "1px solid gray",
-              padding: "8px 16px",
-            }}
-          >
-            No
-          </button>
+        <div className="flex w-full flex-col gap-4">
+          <OptionButton label="Yes" selected={value === true} onClick={() => onChange(true)} />
+          <OptionButton label="No" selected={value === false} onClick={() => onChange(false)} />
         </div>
       );
 
+    // ---- Single select ----
     case "single_select":
       return (
-        <div>
+        <div className="flex w-full flex-col gap-4">
           {question.options?.map((option) => (
-            <div key={String(option.value)} style={{ marginBottom: 4 }}>
-              <label>
-                <input
-                  type="radio"
-                  name={question.id}
-                  checked={value === option.value}
-                  onChange={() => onChange(option.value)}
-                />
-                {" "}
-                {option.iconEmoji && `${option.iconEmoji} `}
-                {option.label}
-                {option.description && (
-                  <span style={{ color: "gray" }}> — {option.description}</span>
-                )}
-              </label>
-            </div>
+            <OptionButton
+              key={String(option.value)}
+              label={option.label}
+              emoji={option.iconEmoji}
+              description={option.description}
+              selected={value === option.value}
+              onClick={() => onChange(option.value)}
+            />
           ))}
         </div>
       );
 
+    // ---- Multi select ----
     case "multi_select": {
-      const selectedValues: any[] = Array.isArray(value) ? value : [];
+      const selected: any[] = Array.isArray(value) ? value : [];
       return (
-        <div>
+        <div className="flex w-full flex-col gap-4">
           {question.options?.map((option) => {
-            const isChecked = selectedValues.includes(option.value);
+            const isChecked = selected.includes(option.value);
             return (
-              <div key={String(option.value)} style={{ marginBottom: 4 }}>
-                <label>
-                  <input
-                    type="checkbox"
-                    checked={isChecked}
-                    onChange={() => {
-                      if (option.value === "none") {
-                        onChange(isChecked ? [] : ["none"]);
-                      } else {
-                        const withoutNone = selectedValues.filter((v) => v !== "none");
-                        if (isChecked) {
-                          onChange(withoutNone.filter((v) => v !== option.value));
-                        } else {
-                          onChange([...withoutNone, option.value]);
-                        }
-                      }
-                    }}
-                  />
-                  {" "}
-                  {option.iconEmoji && `${option.iconEmoji} `}
-                  {option.label}
-                </label>
-              </div>
+              <OptionButton
+                key={String(option.value)}
+                label={`${option.iconEmoji ? option.iconEmoji + " " : ""}${option.label}`}
+                selected={isChecked}
+                onClick={() => {
+                  if (option.value === "none") {
+                    onChange(isChecked ? [] : ["none"]);
+                  } else {
+                    const withoutNone = selected.filter((v) => v !== "none");
+                    onChange(
+                      isChecked
+                        ? withoutNone.filter((v) => v !== option.value)
+                        : [...withoutNone, option.value]
+                    );
+                  }
+                }}
+              />
             );
           })}
         </div>
       );
     }
 
+    // ---- Text ----
     case "text":
       return (
         <input
@@ -242,10 +323,11 @@ function QuestionInput({
           value={value || ""}
           onChange={(e) => onChange(e.target.value)}
           placeholder={question.placeholder}
-          style={{ padding: 8, width: "100%", maxWidth: 400 }}
+          className="h-[50px] w-full rounded-[14px] bg-[#f4f4f4] px-5 py-3 text-lg text-black outline-none placeholder:text-[#a0a09b] focus:ring-2 focus:ring-[#186346]"
         />
       );
 
+    // ---- Textarea ----
     case "textarea":
       return (
         <textarea
@@ -253,15 +335,17 @@ function QuestionInput({
           onChange={(e) => onChange(e.target.value)}
           placeholder={question.placeholder}
           rows={4}
-          style={{ padding: 8, width: "100%", maxWidth: 400 }}
+          className="w-full rounded-[14px] bg-[#f4f4f4] px-5 py-4 text-lg text-black outline-none placeholder:text-[#a0a09b] focus:ring-2 focus:ring-[#186346]"
         />
       );
 
+    // ---- Integer ----
     case "integer":
       return (
-        <div>
+        <div className="flex w-full items-center gap-3">
           <input
             type="number"
+            inputMode="numeric"
             value={value ?? ""}
             onChange={(e) =>
               onChange(e.target.value === "" ? undefined : parseInt(e.target.value))
@@ -270,17 +354,21 @@ function QuestionInput({
             min={question.validation?.min}
             max={question.validation?.max}
             step={1}
-            style={{ padding: 8, width: 150 }}
+            className="h-[50px] flex-1 rounded-[14px] bg-[#f4f4f4] px-5 py-3 text-lg text-black outline-none placeholder:text-[#a0a09b] focus:ring-2 focus:ring-[#186346]"
           />
-          {question.unit && <span> {question.unit}</span>}
+          {question.unit && (
+            <span className="shrink-0 text-base font-medium text-black/60">{question.unit}</span>
+          )}
         </div>
       );
 
+    // ---- Float ----
     case "float":
       return (
-        <div>
+        <div className="flex w-full items-center gap-3">
           <input
             type="number"
+            inputMode="decimal"
             value={value ?? ""}
             onChange={(e) =>
               onChange(e.target.value === "" ? undefined : parseFloat(e.target.value))
@@ -289,31 +377,45 @@ function QuestionInput({
             min={question.validation?.min}
             max={question.validation?.max}
             step={0.1}
-            style={{ padding: 8, width: 150 }}
+            className="h-[50px] flex-1 rounded-[14px] bg-[#f4f4f4] px-5 py-3 text-lg text-black outline-none placeholder:text-[#a0a09b] focus:ring-2 focus:ring-[#186346]"
           />
-          {question.unit && <span> {question.unit}</span>}
+          {question.unit && (
+            <span className="shrink-0 text-base font-medium text-black/60">{question.unit}</span>
+          )}
         </div>
       );
 
+    // ---- Scale (e.g. pain 0-10, overall feeling 1-5) ----
     case "scale": {
       const min = question.validation?.min ?? 0;
       const max = question.validation?.max ?? 10;
+      const steps = Array.from({ length: max - min + 1 }, (_, i) => min + i);
       return (
-        <div>
-          <input
-            type="range"
-            min={min}
-            max={max}
-            value={value ?? min}
-            onChange={(e) => onChange(parseInt(e.target.value))}
-            style={{ width: 300 }}
-          />
-          <span> {value ?? min}</span>
+        <div className="flex w-full flex-col gap-3">
+          <div className="flex w-full flex-wrap justify-center gap-2">
+            {steps.map((step) => (
+              <button
+                key={step}
+                onClick={() => onChange(step)}
+                className={`flex h-12 w-12 cursor-pointer items-center justify-center rounded-full text-lg font-medium transition-colors duration-150 ${
+                  value === step
+                    ? "border border-solid border-[#186346] bg-[#dcf5f0] text-black"
+                    : "bg-[#f4f4f4] text-black"
+                }`}
+              >
+                {step}
+              </button>
+            ))}
+          </div>
+          <div className="flex justify-between px-1 text-xs text-black/40">
+            <span>{min}</span>
+            <span>{max}</span>
+          </div>
         </div>
       );
     }
 
     default:
-      return <p>Unsupported question type: {question.type}</p>;
+      return <p className="text-sm text-[#a0a09b]">Unsupported question type: {question.type}</p>;
   }
 }

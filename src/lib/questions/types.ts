@@ -144,7 +144,6 @@ export interface Survey {
 
 // Re-export from centralized database types for convenience
 export type {
-  SexAssigned,
   SepsisStatus,
   CaregiverAvailability,
   PhysicalAbility,
