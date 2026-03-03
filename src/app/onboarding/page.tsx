@@ -1,11 +1,29 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { onboardingQuestions } from "@/lib/questions";
 import type { Question } from "@/lib/questions/types";
 
+// ============================================================================
+// Design tokens from Figma (same as check-in)
+// ============================================================================
+const colors = {
+  bg: "bg-[#fdfbf5]",
+  primary: "#186346",
+  primaryBg: "bg-[#186346]",
+  optionBg: "bg-[#f4f4f4]",
+  selectedBg: "bg-[#dcf5f0]",
+  selectedBorder: "border-[#186346]",
+  disabledBg: "bg-[#e5e5e0]",
+  disabledText: "text-[#a0a09b]",
+  trackBg: "bg-[#d9d9d9]",
+  trackFill: "bg-[#186346]",
+};
+
+// ============================================================================
+// Main page
+// ============================================================================
 export default function OnboardingPage() {
-  // Store answers keyed by question id
   const [answers, setAnswers] = useState<Record<string, any>>({});
   const [currentIndex, setCurrentIndex] = useState(0);
   const [finished, setFinished] = useState(false);
@@ -52,6 +70,14 @@ export default function OnboardingPage() {
 
   const currentQuestion = visibleQuestions[currentIndex];
   const totalQuestions = visibleQuestions.length;
+  const currentValue = currentQuestion ? answers[currentQuestion.id] : undefined;
+  const isRequired = currentQuestion?.validation?.required === true;
+  const hasAnswer = !isRequired || (currentValue !== undefined && currentValue !== "" && currentValue !== null);
+
+  const progressPct = useMemo(
+    () => (totalQuestions > 0 ? (currentIndex / totalQuestions) * 100 : 0),
+    [currentIndex]
+  );
 
   const setAnswer = (question: Question, value: any) => {
     setAnswers((prev) => {
@@ -75,7 +101,8 @@ export default function OnboardingPage() {
     });
   };
 
-  const handleNext = () => {
+  const handleContinue = () => {
+    if (!hasAnswer) return;
     if (currentIndex < totalQuestions - 1) {
       setCurrentIndex(currentIndex + 1);
     } else {
@@ -89,29 +116,55 @@ export default function OnboardingPage() {
     }
   };
 
-  // Show summary when finished
+  const handleRestart = () => {
+    setFinished(false);
+    setCurrentIndex(0);
+    setAnswers({});
+  };
+
+  // ----- Completion screen -----
   if (finished) {
     return (
-      <div>
-        <h1>Onboarding Complete</h1>
-        <p>Here are your answers:</p>
-        <ul>
-          {Object.entries(answers).map(([key, value]) => (
-            <li key={key}>
-              <strong>{key}:</strong>{" "}
-              {Array.isArray(value) ? value.join(", ") : String(value)}
-            </li>
-          ))}
-        </ul>
-        <button onClick={() => { setFinished(false); setCurrentIndex(0); }}>
+      <div className={`${colors.bg} flex min-h-dvh flex-col items-center justify-between px-4 pb-20 pt-2.5`}>
+        <div className="flex w-full max-w-[430px] flex-col gap-6">
+          <div className="flex flex-col items-end">
+            <button
+              onClick={handleRestart}
+              className="cursor-pointer rounded-[9px] bg-[#f4f4f4] px-3 py-[7px] text-xs font-medium text-black"
+            >
+              Restart
+            </button>
+          </div>
+
+          {/* Full progress bar */}
+          <div className="flex w-full flex-col gap-4">
+            <div className={`flex w-full items-center rounded-full ${colors.trackBg}`}>
+              <div className={`h-1.5 rounded-full ${colors.trackFill}`} style={{ width: "100%" }} />
+            </div>
+            <h1 className="text-[26px] font-semibold leading-normal text-black">
+              Onboarding Complete 🎉
+            </h1>
+            <p className="text-sm text-black/60">Your profile has been set up. You&apos;re ready to start tracking your health.</p>
+          </div>
+        </div>
+
+        <button
+          onClick={handleRestart}
+          className={`${colors.primaryBg} flex h-[50px] w-full max-w-[430px] cursor-pointer items-center justify-center rounded-[14px] px-6 py-[5px] text-lg font-semibold text-white`}
+        >
           Start Over
         </button>
       </div>
     );
   }
 
+  // ----- No questions fallback -----
   if (!currentQuestion) {
-    return <div>No questions available.</div>;
+    return (
+      <div className={`${colors.bg} flex min-h-dvh items-center justify-center px-4`}>
+        <p className="text-lg text-black/60">No questions available.</p>
+      </div>
+    );
   }
 
   const questionText = isCaregiver
@@ -122,38 +175,168 @@ export default function OnboardingPage() {
     ? currentQuestion.caregiverHelpText || currentQuestion.helpText
     : currentQuestion.helpText;
 
+  // ----- Main question screen -----
   return (
-    <div>
-      <p>
-        Question {currentIndex + 1} of {totalQuestions} — Section:{" "}
-        {currentQuestion.section}
-      </p>
+    <div className={`${colors.bg} flex min-h-dvh flex-col items-center justify-between px-4 pb-20 pt-2.5`}>
+      {/* ---- Top: restart, progress, question, options ---- */}
+      <div className="flex w-full max-w-[430px] flex-col gap-6">
+        {/* Top bar: back button + restart */}
+        <div className="flex items-center justify-between">
+          {currentIndex > 0 ? (
+            <button
+              onClick={handleBack}
+              className="cursor-pointer rounded-[9px] bg-[#f4f4f4] px-3 py-[7px] text-xs font-medium text-black"
+            >
+              ← Back
+            </button>
+          ) : (
+            <div />
+          )}
+          <button
+            onClick={handleRestart}
+            className="cursor-pointer rounded-[9px] bg-[#f4f4f4] px-3 py-[7px] text-xs font-medium text-black"
+          >
+            Restart
+          </button>
+        </div>
 
-      <h2>{questionText}</h2>
+        {/* Progress bar + question text */}
+        <div className="flex w-full flex-col gap-4">
+          <div className={`flex w-full items-center rounded-full ${colors.trackBg}`}>
+            <div
+              className={`h-1.5 rounded-l-full ${colors.trackFill} transition-all duration-300 ease-out`}
+              style={{ width: `${progressPct}%` }}
+            />
+          </div>
 
-      {helpText && (
-        <p>
-          <em>{helpText}</em>
-        </p>
-      )}
+          <h2 className="text-[26px] font-semibold leading-normal text-black">
+            {questionText}
+          </h2>
 
-      <QuestionInput
-        question={currentQuestion}
-        value={answers[currentQuestion.id]}
-        onChange={(value) => setAnswer(currentQuestion, value)}
-      />
+          {helpText && (
+            <p className="text-sm leading-relaxed text-black/50">{helpText}</p>
+          )}
+        </div>
 
-      <div style={{ marginTop: 20 }}>
-        {currentIndex > 0 && <button onClick={handleBack}>← Back</button>}
-        <button onClick={handleNext} style={{ marginLeft: 10 }}>
-          {currentIndex === totalQuestions - 1 ? "Finish" : "Next →"}
-        </button>
+        {/* Answer options */}
+        <QuestionInput
+          question={currentQuestion}
+          value={currentValue}
+          onChange={(value) => setAnswer(currentQuestion, value)}
+        />
       </div>
+
+      {/* ---- Bottom: continue button ---- */}
+      <button
+        onClick={handleContinue}
+        disabled={!hasAnswer}
+        className={`flex h-[50px] w-full max-w-[430px] cursor-pointer items-center justify-center rounded-[14px] px-6 py-[5px] text-lg font-semibold transition-colors duration-200 ${
+          hasAnswer
+            ? `${colors.primaryBg} text-white`
+            : `${colors.disabledBg} ${colors.disabledText} cursor-default`
+        }`}
+      >
+        {currentIndex === totalQuestions - 1 ? "Finish" : "Continue"}
+      </button>
     </div>
   );
 }
 
-// Renders the appropriate input based on question type
+
+function OptionButton({
+  label,
+  selected,
+  onClick,
+  emoji,
+  description,
+}: {
+  label: string;
+  selected: boolean;
+  onClick: () => void;
+  emoji?: string;
+  description?: string;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      className={`flex w-full cursor-pointer items-center justify-center rounded-[14px] transition-colors duration-150 ${
+        selected
+          ? "bg-[#dcf5f0]"
+          : "bg-[#f4f4f4]"
+      }`}
+    >
+      <div
+        className={`flex h-[50px] flex-1 items-center justify-center overflow-hidden rounded-[14px] px-[19px] py-[13px] ${
+          selected ? "border border-solid border-[#186346]" : ""
+        }`}
+      >
+        <span className="text-center text-lg text-black">
+          {emoji && <span className="mr-2">{emoji}</span>}
+          {label}
+        </span>
+      </div>
+    </button>
+  );
+}
+
+
+function AutocompleteInput({
+  question,
+  value,
+  onChange,
+}: {
+  question: Question;
+  value: any;
+  onChange: (value: any) => void;
+}) {
+  const [search, setSearch] = useState("");
+  const selectedItems: any[] = Array.isArray(value) ? value : [];
+  const filteredOptions = question.options?.filter((opt) =>
+    opt.label.toLowerCase().includes(search.toLowerCase())
+  );
+
+  return (
+    <div className="flex w-full flex-col gap-3">
+      <input
+        type="text"
+        placeholder="Search..."
+        value={search}
+        onChange={(e) => setSearch(e.target.value)}
+        className="h-[50px] w-full rounded-[14px] bg-[#f4f4f4] px-5 py-3 text-lg text-black outline-none placeholder:text-[#a0a09b] focus:ring-2 focus:ring-[#186346]"
+      />
+      <div className="flex max-h-[300px] w-full flex-col gap-2 overflow-y-auto">
+        {filteredOptions?.map((option) => {
+          const isChecked = selectedItems.includes(option.value);
+          return (
+            <OptionButton
+              key={String(option.value)}
+              label={option.label}
+              selected={isChecked}
+              onClick={() => {
+                if (option.value === "none") {
+                  onChange(isChecked ? [] : ["none"]);
+                } else {
+                  const withoutNone = selectedItems.filter((v) => v !== "none");
+                  onChange(
+                    isChecked
+                      ? withoutNone.filter((v) => v !== option.value)
+                      : [...withoutNone, option.value]
+                  );
+                }
+              }}
+            />
+          );
+        })}
+      </div>
+      {selectedItems.length > 0 && selectedItems[0] !== "none" && (
+        <p className="text-sm text-black/50">
+          Selected: {selectedItems.join(", ")}
+        </p>
+      )}
+    </div>
+  );
+}
+
 function QuestionInput({
   question,
   value,
@@ -164,96 +347,64 @@ function QuestionInput({
   onChange: (value: any) => void;
 }) {
   switch (question.type) {
+    // ---- Boolean (Yes / No) ----
     case "boolean":
       return (
-        <div>
-          <button
-            onClick={() => onChange(true)}
-            style={{
-              fontWeight: value === true ? "bold" : "normal",
-              border: value === true ? "2px solid black" : "1px solid gray",
-              padding: "8px 16px",
-              marginRight: 8,
-            }}
-          >
-            Yes
-          </button>
-          <button
-            onClick={() => onChange(false)}
-            style={{
-              fontWeight: value === false ? "bold" : "normal",
-              border: value === false ? "2px solid black" : "1px solid gray",
-              padding: "8px 16px",
-            }}
-          >
-            No
-          </button>
+        <div className="flex w-full flex-col gap-4">
+          <OptionButton label="Yes" selected={value === true} onClick={() => onChange(true)} />
+          <OptionButton label="No" selected={value === false} onClick={() => onChange(false)} />
         </div>
       );
 
+    // ---- Single select ----
     case "single_select":
       return (
-        <div>
+        <div className="flex w-full flex-col gap-4">
           {question.options?.map((option) => (
-            <div key={String(option.value)} style={{ marginBottom: 4 }}>
-              <label>
-                <input
-                  type="radio"
-                  name={question.id}
-                  checked={value === option.value}
-                  onChange={() => onChange(option.value)}
-                />
-                {" "}
-                {option.iconEmoji && `${option.iconEmoji} `}
-                {option.label}
-                {option.description && (
-                  <span style={{ color: "gray" }}> — {option.description}</span>
-                )}
-              </label>
-            </div>
+            <OptionButton
+              key={String(option.value)}
+              label={option.label}
+              emoji={option.iconEmoji}
+              description={option.description}
+              selected={value === option.value}
+              onClick={() => onChange(option.value)}
+            />
           ))}
         </div>
       );
 
-    case "multi_select":
-      const selectedValues: any[] = Array.isArray(value) ? value : [];
+    // ---- Multi select ----
+    case "multi_select": {
+      const selected: any[] = Array.isArray(value) ? value : [];
       return (
-        <div>
+        <div className="flex w-full flex-col gap-4">
           {question.options?.map((option) => {
-            const isChecked = selectedValues.includes(option.value);
+            const isChecked = selected.includes(option.value);
             return (
-              <div key={String(option.value)} style={{ marginBottom: 4 }}>
-                <label>
-                  <input
-                    type="checkbox"
-                    checked={isChecked}
-                    onChange={() => {
-                      if (option.value === "none") {
-                        // "None" clears all other selections
-                        onChange(isChecked ? [] : ["none"]);
-                      } else {
-                        // Remove "none" if selecting something else
-                        const withoutNone = selectedValues.filter(
-                          (v) => v !== "none"
-                        );
-                        if (isChecked) {
-                          onChange(withoutNone.filter((v) => v !== option.value));
-                        } else {
-                          onChange([...withoutNone, option.value]);
-                        }
-                      }
-                    }}
-                  />
-                  {" "}
-                  {option.iconEmoji && `${option.iconEmoji} `}
-                  {option.label}
-                </label>
-              </div>
+              <OptionButton
+                key={String(option.value)}
+                label={`${option.iconEmoji ? option.iconEmoji + " " : ""}${option.label}`}
+                selected={isChecked}
+                onClick={() => {
+                  if (option.value === "none") {
+                    onChange(isChecked ? [] : ["none"]);
+                  } else {
+                    const withoutNone = selected.filter((v) => v !== "none");
+                    onChange(
+                      isChecked
+                        ? withoutNone.filter((v) => v !== option.value)
+                        : [...withoutNone, option.value]
+                    );
+                  }
+                }}
+              />
             );
           })}
         </div>
       );
+    }
 
+    // ---- Text ----
     case "text":
       return (
         <input
@@ -261,10 +412,11 @@ function QuestionInput({
           value={value || ""}
           onChange={(e) => onChange(e.target.value)}
           placeholder={question.placeholder}
-          style={{ padding: 8, width: "100%", maxWidth: 400 }}
+          className="h-[50px] w-full rounded-[14px] bg-[#f4f4f4] px-5 py-3 text-lg text-black outline-none placeholder:text-[#a0a09b] focus:ring-2 focus:ring-[#186346]"
         />
       );
 
+    // ---- Textarea ----
     case "textarea":
       return (
         <textarea
@@ -272,25 +424,28 @@ function QuestionInput({
           onChange={(e) => onChange(e.target.value)}
           placeholder={question.placeholder}
           rows={4}
-          style={{ padding: 8, width: "100%", maxWidth: 400 }}
+          className="w-full rounded-[14px] bg-[#f4f4f4] px-5 py-4 text-lg text-black outline-none placeholder:text-[#a0a09b] focus:ring-2 focus:ring-[#186346]"
         />
       );
 
+    // ---- Date ----
     case "date":
       return (
         <input
           type="date"
           value={value || ""}
           onChange={(e) => onChange(e.target.value)}
-          style={{ padding: 8 }}
+          className="h-[50px] w-full rounded-[14px] bg-[#f4f4f4] px-5 py-3 text-lg text-black outline-none focus:ring-2 focus:ring-[#186346]"
         />
       );
 
+    // ---- Integer ----
     case "integer":
       return (
-        <div>
+        <div className="flex w-full items-center gap-3">
           <input
             type="number"
+            inputMode="numeric"
             value={value ?? ""}
             onChange={(e) =>
               onChange(e.target.value === "" ? undefined : parseInt(e.target.value))
@@ -299,106 +454,78 @@ function QuestionInput({
             min={question.validation?.min}
             max={question.validation?.max}
             step={1}
-            style={{ padding: 8, width: 150 }}
+            className="h-[50px] flex-1 rounded-[14px] bg-[#f4f4f4] px-5 py-3 text-lg text-black outline-none placeholder:text-[#a0a09b] focus:ring-2 focus:ring-[#186346]"
           />
-          {question.unit && <span> {question.unit}</span>}
+          {question.unit && (
+            <span className="shrink-0 text-base font-medium text-black/60">{question.unit}</span>
+          )}
         </div>
       );
 
+    // ---- Float ----
     case "float":
       return (
-        <div>
+        <div className="flex w-full items-center gap-3">
           <input
             type="number"
+            inputMode="decimal"
             value={value ?? ""}
             onChange={(e) =>
-              onChange(
-                e.target.value === "" ? undefined : parseFloat(e.target.value)
-              )
+              onChange(e.target.value === "" ? undefined : parseFloat(e.target.value))
             }
             placeholder={question.placeholder}
             min={question.validation?.min}
             max={question.validation?.max}
             step={0.1}
-            style={{ padding: 8, width: 150 }}
+            className="h-[50px] flex-1 rounded-[14px] bg-[#f4f4f4] px-5 py-3 text-lg text-black outline-none placeholder:text-[#a0a09b] focus:ring-2 focus:ring-[#186346]"
           />
-          {question.unit && <span> {question.unit}</span>}
-        </div>
-      );
-
-    case "scale":
-      const min = question.validation?.min ?? 0;
-      const max = question.validation?.max ?? 10;
-      return (
-        <div>
-          <input
-            type="range"
-            min={min}
-            max={max}
-            value={value ?? min}
-            onChange={(e) => onChange(parseInt(e.target.value))}
-            style={{ width: 300 }}
-          />
-          <span> {value ?? min}</span>
-        </div>
-      );
-
-    case "autocomplete":
-      // Simplified as searchable checkbox list
-      const selectedMeds: any[] = Array.isArray(value) ? value : [];
-      const [search, setSearch] = useState("");
-      const filteredOptions = question.options?.filter((opt) =>
-        opt.label.toLowerCase().includes(search.toLowerCase())
-      );
-      return (
-        <div>
-          <input
-            type="text"
-            placeholder="Search medications..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            style={{ padding: 8, width: "100%", maxWidth: 400, marginBottom: 8 }}
-          />
-          <div style={{ maxHeight: 300, overflowY: "auto" }}>
-            {filteredOptions?.map((option) => {
-              const isChecked = selectedMeds.includes(option.value);
-              return (
-                <div key={String(option.value)} style={{ marginBottom: 4 }}>
-                  <label>
-                    <input
-                      type="checkbox"
-                      checked={isChecked}
-                      onChange={() => {
-                        if (option.value === "none") {
-                          onChange(isChecked ? [] : ["none"]);
-                        } else {
-                          const withoutNone = selectedMeds.filter(
-                            (v) => v !== "none"
-                          );
-                          if (isChecked) {
-                            onChange(
-                              withoutNone.filter((v) => v !== option.value)
-                            );
-                          } else {
-                            onChange([...withoutNone, option.value]);
-                          }
-                        }
-                      }}
-                    />
-                    {" "}
-                    {option.label}
-                  </label>
-                </div>
-              );
-            })}
-          </div>
-          {selectedMeds.length > 0 && (
-            <p>Selected: {selectedMeds.join(", ")}</p>
+          {question.unit && (
+            <span className="shrink-0 text-base font-medium text-black/60">{question.unit}</span>
           )}
         </div>
       );
 
+    // ---- Scale (e.g. pain 0-10, overall feeling 1-5) ----
+    case "scale": {
+      const min = question.validation?.min ?? 0;
+      const max = question.validation?.max ?? 10;
+      const steps = Array.from({ length: max - min + 1 }, (_, i) => min + i);
+      return (
+        <div className="flex w-full flex-col gap-3">
+          <div className="flex w-full flex-wrap justify-center gap-2">
+            {steps.map((step) => (
+              <button
+                key={step}
+                onClick={() => onChange(step)}
+                className={`flex h-12 w-12 cursor-pointer items-center justify-center rounded-full text-lg font-medium transition-colors duration-150 ${
+                  value === step
+                    ? "border border-solid border-[#186346] bg-[#dcf5f0] text-black"
+                    : "bg-[#f4f4f4] text-black"
+                }`}
+              >
+                {step}
+              </button>
+            ))}
+          </div>
+          <div className="flex justify-between px-1 text-xs text-black/40">
+            <span>{min}</span>
+            <span>{max}</span>
+          </div>
+        </div>
+      );
+    }
+
+    // ---- Autocomplete (searchable checkbox list) ----
+    case "autocomplete":
+      return (
+        <AutocompleteInput
+          question={question}
+          value={value}
+          onChange={onChange}
+        />
+      );
+
     default:
-      return <p>Unsupported question type: {question.type}</p>;
+      return <p className="text-sm text-[#a0a09b]">Unsupported question type: {question.type}</p>;
   }
 }
