@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { dailyCheckInQuestions } from "@/lib/questions";
 import type { Question, QuestionOption } from "@/lib/questions/types";
 
@@ -66,7 +66,13 @@ export default function CheckInPage() {
   const totalQuestions = visibleQuestions.length;
   const currentValue = currentQuestion ? answers[currentQuestion.id] : undefined;
   const hasAnswer = currentValue !== undefined && currentValue !== "" && currentValue !== null;
-  const progressPct = totalQuestions > 0 ? ((currentIndex + 1) / totalQuestions) * 100 : 0;
+
+  // Progress only recalculates when currentIndex changes (on Continue click),
+  // NOT when totalQuestions changes from answer selection affecting prerequisites.
+    const progressPct = useMemo(
+      () => (totalQuestions > 0 ? (currentIndex / totalQuestions) * 100 : 0),
+      [currentIndex]
+    );
 
   const setAnswer = (question: Question, value: any) => {
     setAnswers((prev) => {
