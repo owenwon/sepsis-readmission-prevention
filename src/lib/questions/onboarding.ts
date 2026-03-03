@@ -28,7 +28,7 @@ export const onboardingQuestions: Question[] = [
   },
 
   // ============================================================================
-  // BASIC INFORMATION (Questions 2-4)
+  // BASIC INFORMATION (Questions 2-3)
   // ============================================================================
 
   {
@@ -69,24 +69,8 @@ export const onboardingQuestions: Question[] = [
     },
   },
 
-  {
-    id: 'sex_assigned_at_birth',
-    section: 'Basic Information',
-    patientText: 'What was your sex assigned at birth?',
-    caregiverText: "What was the patient's sex assigned at birth?",
-    type: 'single_select',
-    options: [
-      { label: 'Male', value: 'male' },
-      { label: 'Female', value: 'female' },
-      { label: 'Intersex', value: 'intersex' },
-      { label: 'Prefer not to say', value: 'prefer_not_to_say' },
-    ],
-    schemaField: 'sex_assigned_at_birth',
-    validation: { required: true },
-  },
-
   // ============================================================================
-  // SEPSIS CONTEXT (Questions 5-7)
+  // SEPSIS CONTEXT (Questions 4-6)
   // ============================================================================
 
   {
@@ -153,7 +137,7 @@ export const onboardingQuestions: Question[] = [
   },
 
   // ============================================================================
-  // MEDICAL HISTORY (Questions 8-10, 11)
+  // MEDICAL HISTORY (Questions 7-9, 10)
   // ============================================================================
 
   {
@@ -633,7 +617,7 @@ export const onboardingQuestions: Question[] = [
   },
 
   // ============================================================================
-  // CARE & SUPPORT (Questions 11-14)
+  // CARE & SUPPORT (Questions 10-13)
   // ============================================================================
 
   {
@@ -711,7 +695,7 @@ export const onboardingQuestions: Question[] = [
   },
 
   // ============================================================================
-  // MONITORING DEVICES (Questions 15-19)
+  // MONITORING DEVICES (Questions 14-18)
   // ============================================================================
 
   {

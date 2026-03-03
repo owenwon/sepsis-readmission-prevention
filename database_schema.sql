@@ -5,13 +5,6 @@
 -- ENUMS (Custom Types)
 -- =============================================================================
 
-CREATE TYPE sex_assigned AS ENUM (
-    'male',
-    'female',
-    'intersex',
-    'prefer_not_to_say'
-);
-
 CREATE TYPE sepsis_status_type AS ENUM (
     'recently_discharged',
     'readmitted',
@@ -68,7 +61,6 @@ CREATE TABLE patients (
     -- =========================================================================
     patient_name VARCHAR(100) NOT NULL,
     birthday DATE NOT NULL,
-    sex_assigned_at_birth sex_assigned NOT NULL,
 
     -- =========================================================================
     -- SEPSIS CONTEXT
@@ -718,7 +710,6 @@ INSERT INTO patients (
     is_caregiver,
     patient_name,
     birthday,
-    sex_assigned_at_birth,
     currently_hospitalized,
     sepsis_status,
     days_since_last_discharge,
@@ -748,7 +739,6 @@ INSERT INTO patients (
     false,
     'John Doe',
     '1950-06-15',
-    'male',
     false,
     'recently_discharged',
     14,
