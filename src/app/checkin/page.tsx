@@ -65,7 +65,8 @@ export default function CheckInPage() {
   const currentQuestion = visibleQuestions[currentIndex];
   const totalQuestions = visibleQuestions.length;
   const currentValue = currentQuestion ? answers[currentQuestion.id] : undefined;
-  const hasAnswer = currentValue !== undefined && currentValue !== "" && currentValue !== null;
+  const isRequired = currentQuestion?.validation?.required === true;
+  const hasAnswer = !isRequired || (currentValue !== undefined && currentValue !== "" && currentValue !== null);
 
   // Progress only recalculates when currentIndex changes (on Continue click),
   // NOT when totalQuestions changes from answer selection affecting prerequisites.
