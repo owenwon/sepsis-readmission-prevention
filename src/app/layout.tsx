@@ -11,6 +11,9 @@ export const metadata = {
   title: "Tillage – Sepsis Recovery Starts Here",
   description:
     "Learn about key warning signs and detect possible recurrences early. Get started and assess your risk level today.",
+  icons: {
+    icon: "/images/tillage-logo.svg",
+  },
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
