@@ -153,10 +153,8 @@ export default function LandingPage() {
         <div className="flex flex-col gap-6">
           {/* Feature Card 1 — Daily Check-in */}
           <div className="relative h-[358px] overflow-hidden rounded-[14px] bg-[#d3ffe6] p-4 shadow-[0px_2px_6px_rgba(0,0,0,0.15)]">
-            {/* Rotated white background shape */}
-            <div className="pointer-events-none absolute -left-10 -top-4 h-[672px] w-[664px] rotate-[-46deg]">
-              <div className="h-[358px] w-[587px] bg-white" />
-            </div>
+            {/* Diagonal white shape — 50/50 split */}
+            <div className="pointer-events-none absolute inset-0 bg-white" style={{ clipPath: "polygon(100% 0, 100% 100%, 0 100%)" }} />
             <div className="relative z-10">
               <h3 className="text-[26px] font-semibold text-black">
                 Daily Check-in
@@ -189,10 +187,8 @@ export default function LandingPage() {
 
           {/* Feature Card 2 — Educational Modules */}
           <div className="relative h-[358px] overflow-hidden rounded-[14px] bg-[#dcdcdc] shadow-[0px_2px_6px_rgba(0,0,0,0.15)]">
-            {/* Rotated white background shape */}
-            <div className="pointer-events-none absolute -left-5 -top-9 h-[669px] w-[668px] rotate-[-45deg]">
-              <div className="h-[358px] w-[587px] bg-white" />
-            </div>
+            {/* Diagonal white shape — 50/50 split */}
+            <div className="pointer-events-none absolute inset-0 bg-white" style={{ clipPath: "polygon(100% 0, 100% 100%, 0 100%)" }} />
             <div className="relative z-10 p-4">
               <h3 className="text-[26px] font-semibold text-black">
                 Educational Modules
@@ -225,10 +221,8 @@ export default function LandingPage() {
 
           {/* Feature Card 3 — View History */}
           <div className="relative h-[358px] overflow-hidden rounded-[14px] bg-[#1d5133] shadow-[0px_2px_6px_rgba(0,0,0,0.15)]">
-            {/* Rotated white background shape */}
-            <div className="pointer-events-none absolute -left-10 -top-4 h-[672px] w-[664px] rotate-[-46deg]">
-              <div className="h-[358px] w-[587px] bg-white" />
-            </div>
+            {/* Diagonal white shape — 50/50 split */}
+            <div className="pointer-events-none absolute inset-0 bg-white" style={{ clipPath: "polygon(100% 0, 100% 100%, 0 100%)" }} />
             <div className="relative z-10 p-4">
               <h3 className="text-[26px] font-semibold text-white">
                 View History
