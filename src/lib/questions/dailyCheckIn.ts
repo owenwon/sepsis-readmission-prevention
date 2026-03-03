@@ -382,17 +382,29 @@ export const dailyCheckInQuestions: Question[] = [
     options: [
       { label: 'Clear, white, or no mucus', value: 1 },
       { label: 'Yellow', value: 2 },
-      { label: 'Green', value: 2 },
-      { label: 'Brown, pink, or red', value: 3 },
+      { label: 'Green', value: 3 },
+      { label: 'Brown, pink, or red', value: 4 },
       { label: 'No cough', value: 'none' },
     ],
     schemaField: ['has_cough', 'mucus_color_level'],
     businessLogic: {
       mapToMultipleFields: true,
-      customMapping: (value: number | string) => ({
-        has_cough: value !== 'none',
-        mucus_color_level: value === 'none' ? null : value,
-      }),
+      customMapping: (value: number | string) => {
+        // UI values are unique (1,2,3,4) for React keys / selection,
+        // but clinical levels need 1,2,2,3 because yellow and green
+        // are the same clinical concern level for the risk calculator
+        const clinicalLevel: Record<string | number, number | null> = {
+          1: 1,    // clear → level 1
+          2: 2,    // yellow → level 2
+          3: 2,    // green → level 2
+          4: 3,    // brown/pink/red → level 3
+          none: null,
+        };
+        return {
+          has_cough: value !== 'none',
+          mucus_color_level: clinicalLevel[value] ?? null,
+        };
+      },
     },
   },
 
