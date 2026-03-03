@@ -1,7 +1,9 @@
 "use client";
 
 import { useState, useMemo } from "react";
+import { useRouter } from "next/navigation";
 import { dailyCheckInQuestions } from "@/lib/questions";
+import { calculateSepsisRisk } from "@/lib/riskCalculator";
 import type { Question, QuestionOption } from "@/lib/questions/types";
 
 // ============================================================================
@@ -24,9 +26,13 @@ const colors = {
 // Main page
 // ============================================================================
 export default function CheckInPage() {
+  const router = useRouter();
   const [answers, setAnswers] = useState<Record<string, any>>({});
   const [currentIndex, setCurrentIndex] = useState(0);
   const [finished, setFinished] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
+  const [riskResult, setRiskResult] = useState<string | null>(null);
 
   // Filter questions based on prerequisites (only evaluate 'current' source)
   const visibleQuestions = dailyCheckInQuestions.filter((q) => {
@@ -64,7 +70,9 @@ export default function CheckInPage() {
 
   const currentQuestion = visibleQuestions[currentIndex];
   const totalQuestions = visibleQuestions.length;
-  const currentValue = currentQuestion ? answers[currentQuestion.id] : undefined;
+  const currentValue = currentQuestion
+    ? (answers[`__ui__${currentQuestion.id}`] ?? answers[currentQuestion.id])
+    : undefined;
   const isRequired = currentQuestion?.validation?.required === true;
   const hasAnswer = !isRequired || (currentValue !== undefined && currentValue !== "" && currentValue !== null);
 
@@ -75,14 +83,24 @@ export default function CheckInPage() {
       [currentIndex]
     );
 
-  const setAnswer = (question: Question, value: any) => {
+  const setAnswer = (question: Question, value: any) => {   
     setAnswers((prev) => {
-      const updated = { ...prev, [question.id]: value };
+      const updated = { ...prev };
+
+      // Always store raw UI value under a __ui__ prefixed key for selection
+      // highlighting. This never reaches the DB because ALLOWED_COLUMNS won't
+      // include it, and it doesn't collide with schema field keys.
+      updated[`__ui__${question.id}`] = value;
+      // Also store under question.id for backwards compat with prerequisites
+      // that reference question ids directly (e.g. fever_chills, heart_racing).
+      updated[question.id] = value;
 
       if (question.businessLogic?.mapToMultipleFields && question.businessLogic.customMapping) {
         const mapped = question.businessLogic.customMapping(value);
+        // Mapped values are DB-ready and overwrite the raw value for schema keys.
+        // For wound_state_level: writes null over 'none' under wound_state_level.
+        // The UI reads __ui__wound_state_level for highlighting, not this key.
         Object.assign(updated, mapped);
-        updated[question.id] = value;
       }
 
       if (typeof question.schemaField === "string" && question.id !== question.schemaField) {
@@ -93,12 +111,39 @@ export default function CheckInPage() {
     });
   };
 
-  const handleContinue = () => {
+  const handleContinue = async () => {
     if (!hasAnswer) return;
     if (currentIndex < totalQuestions - 1) {
       setCurrentIndex(currentIndex + 1);
     } else {
-      setFinished(true);
+      // Last question — calculate risk and submit
+      const riskCalcResult = calculateSepsisRisk(answers as any);
+      const risk_level = riskCalcResult.riskLevel;
+      // Spread computed zones into the payload so the DB zone_consistency constraints
+      // are satisfied. Each zone column must accompany its corresponding value column
+      // or the CHECK constraint rejects the row.
+      const { zones } = riskCalcResult;
+      setSubmitting(true);
+      setSubmitError(null);
+      try {
+        const res = await fetch("/api/checkin", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ answers: { ...answers, ...zones, risk_level } })
+        });
+        if (res.ok) {
+          setRiskResult(risk_level);
+          setFinished(true);
+          setTimeout(() => router.push("/dashboard"), 2000);
+        } else {
+          const data = await res.json();
+          setSubmitError(data.error ?? "Failed to save check-in data.");
+          setSubmitting(false);
+        }
+      } catch (err: any) {
+        setSubmitError(err.message ?? "Network error. Please try again.");
+        setSubmitting(false);
+      }
     }
   };
 
@@ -110,6 +155,23 @@ export default function CheckInPage() {
 
   // ----- Completion screen -----
   if (finished) {
+    const riskLabel =
+      riskResult === "GREEN"
+        ? "Low"
+        : riskResult === "YELLOW"
+          ? "Moderate"
+          : riskResult === "RED"
+            ? "High"
+            : riskResult === "RED_EMERGENCY"
+              ? "Emergency"
+              : "Unknown";
+    const riskBg =
+      riskResult === "GREEN"
+        ? "bg-green-100 text-green-800"
+        : riskResult === "YELLOW"
+          ? "bg-yellow-100 text-yellow-800"
+          : "bg-red-100 text-red-800";
+
     return (
       <div className={`${colors.bg} flex min-h-dvh flex-col items-center justify-between px-4 pb-20 pt-2.5`}>
         <div className="flex w-full max-w-[430px] flex-col gap-6">
@@ -131,6 +193,13 @@ export default function CheckInPage() {
               Daily Check-In Complete 🎉
             </h1>
             <p className="text-sm text-black/60">Your responses have been recorded. Thank you for checking in today.</p>
+
+            {riskResult && (
+              <div className={`mt-2 rounded-xl px-5 py-4 text-center ${riskBg}`}>
+                <p className="text-sm font-medium">Your risk level today:</p>
+                <p className="mt-1 text-xl font-bold">{riskLabel}</p>
+              </div>
+            )}
           </div>
         </div>
 
@@ -197,18 +266,27 @@ export default function CheckInPage() {
         />
       </div>
 
-      {/* ---- Bottom: continue button ---- */}
-      <button
-        onClick={handleContinue}
-        disabled={!hasAnswer}
-        className={`flex h-[50px] w-full max-w-[430px] cursor-pointer items-center justify-center rounded-[14px] px-6 py-[5px] text-lg font-semibold transition-colors duration-200 ${
-          hasAnswer
-            ? `${colors.primaryBg} text-white`
-            : `${colors.disabledBg} ${colors.disabledText} cursor-default`
-        }`}
-      >
-        {currentIndex === totalQuestions - 1 ? "Finish" : "Continue"}
-      </button>
+      {/* ---- Bottom: error + continue button ---- */}
+      <div className="flex w-full max-w-[430px] flex-col gap-2">
+        {submitError && (
+          <p className="text-center text-sm text-red-600">{submitError}</p>
+        )}
+        <button
+          onClick={handleContinue}
+          disabled={submitting || !hasAnswer}
+          className={`flex h-[50px] w-full cursor-pointer items-center justify-center rounded-[14px] px-6 py-[5px] text-lg font-semibold transition-colors duration-200 ${
+            hasAnswer && !submitting
+              ? `${colors.primaryBg} text-white`
+              : `${colors.disabledBg} ${colors.disabledText} cursor-default`
+          }`}
+        >
+          {submitting
+            ? "Saving..."
+            : currentIndex === totalQuestions - 1
+              ? "Finish"
+              : "Continue"}
+        </button>
+      </div>
     </div>
   );
 }

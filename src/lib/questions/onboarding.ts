@@ -52,20 +52,17 @@ export const onboardingQuestions: Question[] = [
     patientText: 'What is your birthday?',
     caregiverText: "What is the patient's birthday?",
     type: 'date',
-    schemaField: ['birthday', 'age'],
+    // schemaField is 'birthday' only — the patients table has no 'age' column.
+    // Age is derived at query time by the database's calculate_age(birthday)
+    // function. Keeping 'age' here was misleading and risked a future developer
+    // adding it to ALLOWED_COLUMNS and hitting a Postgres column-not-found error.
+    schemaField: 'birthday',
     validation: { required: true },
     businessLogic: {
-      mapToMultipleFields: true,
-      customMapping: (value: string) => {
-        const birthDate = new Date(value);
-        const today = new Date();
-        let age = today.getFullYear() - birthDate.getFullYear();
-        const monthDiff = today.getMonth() - birthDate.getMonth();
-        if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birthDate.getDate())) {
-          age--;
-        }
-        return { birthday: value, age };
-      },
+      // mapToMultipleFields and the age computation have been removed.
+      // Only birthday needs to be written; age is the DB's responsibility.
+      mapToMultipleFields: false,
+      customMapping: (value: string) => ({ birthday: value }),
     },
   },
 
@@ -129,10 +126,18 @@ export const onboardingQuestions: Question[] = [
     validation: { required: true },
     businessLogic: {
       mapToMultipleFields: true,
-      customMapping: (value: number) => ({
-        admitted_count: value,
-        sepsis_status: value > 1 ? 'readmitted' : undefined,
-      }),
+      customMapping: (value: number) => {
+        const result: Record<string, any> = { admitted_count: value };
+        if (value > 1) {
+          // Only write sepsis_status when we are certain it should be 'readmitted'.
+          // When value === 1, we intentionally omit sepsis_status so we do not
+          // overwrite the 'recently_discharged' value that days_since_last_discharge
+          // may have already set. Two mappings write to the same DB column; the later
+          // one must never silently clobber the earlier one with undefined.
+          result.sepsis_status = 'readmitted';
+        }
+        return result;
+      },
     },
   },
 
@@ -649,6 +654,19 @@ export const onboardingQuestions: Question[] = [
     prerequisites: [
       { field: 'has_caregiver', operator: '==', value: true },
     ],
+    businessLogic: {
+      mapToMultipleFields: true,
+      customMapping: (value: string) => ({
+        caregiver_availability: value,
+        // When the user selects 'none' here, retroactively set has_caregiver
+        // to false so both columns remain consistent in the DB. This situation
+        // arises because the question is gated behind has_caregiver === true,
+        // but the user may have answered 'yes' to has_caregiver and then
+        // clarified 'none' here. Without this correction, has_caregiver stays
+        // true while caregiver_availability is 'none' — contradictory data.
+        has_caregiver: value !== 'none',
+      }),
+    },
   },
 
   {
@@ -684,14 +702,20 @@ export const onboardingQuestions: Question[] = [
     helpText: 'This means someone who would notice if you were not doing well and could help get you care.',
     type: 'single_select',
     options: [
-      { label: 'Yes, daily or almost daily', value: true },
-      { label: 'Yes, occasionally', value: true },
-      { label: 'No regular support', value: false },
+      { label: 'Yes, daily or almost daily', value: 'daily' },
+      { label: 'Yes, occasionally', value: 'occasional' },
+      { label: 'No regular support', value: 'none' },
     ],
-    schemaField: 'has_social_support',
+    schemaField: ['has_social_support'],
     prerequisites: [
       { field: 'has_caregiver', operator: '==', value: false },
     ],
+    businessLogic: {
+      mapToMultipleFields: true,
+      customMapping: (value: string) => ({
+        has_social_support: value !== 'none',
+      }),
+    },
   },
 
   // ============================================================================

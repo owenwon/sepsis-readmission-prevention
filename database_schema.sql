@@ -93,14 +93,14 @@ CREATE TABLE patients (
     --
     --   has_hypertension      ← hypertension (UI/tracking only, no riskCalculator effect)
     --   has_diabetes          ← diabetes (UI/tracking only, no riskCalculator effect)
-    --   chronic_conditions_other ← any other selected condition
+    --   has_other_chronic_conditions ← any other selected condition
     -- =========================================================================
     has_weakened_immune BOOLEAN DEFAULT false,
     has_lung_condition BOOLEAN DEFAULT false,
     has_heart_failure BOOLEAN DEFAULT false,
     has_hypertension BOOLEAN DEFAULT false,
     has_diabetes BOOLEAN DEFAULT false,
-    chronic_conditions_other BOOLEAN DEFAULT false,
+    has_other_chronic_conditions BOOLEAN DEFAULT false,
 
     -- =========================================================================
     -- RECENT / ACTIVE ILLNESSES
