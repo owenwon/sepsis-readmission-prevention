@@ -60,7 +60,7 @@ export default function LandingPage() {
   return (
     <div className="min-h-screen bg-[#fdfbf5] font-[family-name:var(--font-poppins)]">
       {/* ===== HERO SECTION ===== */}
-      <section className="relative overflow-hidden bg-[#104832] px-4 pb-16 pt-6">
+      <section className="relative overflow-hidden bg-[#104832] px-4 pb-0 pt-6">
         {/* Decorative leaves — positioned absolutely */}
         <div className="pointer-events-none absolute -left-8 -top-6 w-[120px] rotate-[118deg] opacity-40">
           <Image src="/images/leaf.png" alt="" width={90} height={90} />
@@ -132,17 +132,20 @@ export default function LandingPage() {
           </div>
         </div>
 
-        {/* Hero bottom graphic */}
-        <div className="pointer-events-none relative z-0 -mx-16 mt-8">
-          <Image
-            src="/images/hero-graphic.svg"
-            alt="Recovery illustration"
-            width={504}
-            height={389}
-            className="w-full"
-          />
-        </div>
       </section>
+
+      <div className="bg-[#104832]">
+        <svg
+          viewBox="0 0 1440 120"
+          preserveAspectRatio="none"
+          className="block h-[80px] w-full md:h-[120px]"
+        >
+          <path
+            d="M0,60 C320,110 560,120 720,90 C880,60 1120,10 1440,50 L1440,120 L0,120 Z"
+            fill="#fdfbf5"
+          />
+        </svg>
+      </div>
 
       {/* ===== FEATURES SECTION ===== */}
       <section className="px-4 py-16">
