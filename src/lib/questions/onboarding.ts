@@ -13,8 +13,8 @@ export const onboardingQuestions: Question[] = [
     caregiverText: 'Which best describes you?',
     type: 'single_select',
     options: [
-      { label: 'Patient', value: 'patient', iconEmoji: '👤' },
-      { label: 'Caregiver', value: 'caregiver', iconEmoji: '🤝' },
+      { label: 'Patient', value: 'patient' },
+      { label: 'Caregiver', value: 'caregiver' },
     ],
     schemaField: ['is_patient', 'is_caregiver'],
     validation: { required: true },
@@ -645,9 +645,9 @@ export const onboardingQuestions: Question[] = [
     caregiverText: 'How often are you available to assist the patient?',
     type: 'single_select',
     options: [
-      { label: '24/7 (Full-time)', value: 'full_time', iconEmoji: '🏥' },
-      { label: 'Only some days (Part-time)', value: 'part_time', iconEmoji: '📅' },
-      { label: 'Occasionally', value: 'occasional', iconEmoji: '🤝' },
+      { label: '24/7 (Full-time)', value: 'full_time' },
+      { label: 'Only some days (Part-time)', value: 'part_time' },
+      { label: 'Occasionally', value: 'occasional' },
       { label: 'None', value: 'none' },
     ],
     schemaField: 'caregiver_availability',
@@ -797,37 +797,31 @@ export const onboardingSections: QuestionSection[] = [
   {
     id: 'getting_started',
     title: 'Getting Started',
-    icon: '👋',
     questions: onboardingQuestions.filter((q) => q.section === 'Getting Started'),
   },
   {
     id: 'basic_information',
     title: 'Basic Information',
-    icon: '📋',
     questions: onboardingQuestions.filter((q) => q.section === 'Basic Information'),
   },
   {
     id: 'sepsis_context',
     title: 'Sepsis History',
-    icon: '🏥',
     questions: onboardingQuestions.filter((q) => q.section === 'Sepsis Context'),
   },
   {
     id: 'medical_history',
     title: 'Medical History',
-    icon: '⚕️',
     questions: onboardingQuestions.filter((q) => q.section === 'Medical History'),
   },
   {
     id: 'care_support',
     title: 'Care & Support',
-    icon: '🤝',
     questions: onboardingQuestions.filter((q) => q.section === 'Care & Support'),
   },
   {
     id: 'monitoring_devices',
     title: 'Monitoring Devices',
-    icon: '🩺',
     questions: onboardingQuestions.filter((q) => q.section === 'Monitoring Devices'),
   },
 ];
