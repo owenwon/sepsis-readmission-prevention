@@ -266,7 +266,7 @@ export default function OnboardingPage() {
       </div>
 
       {/* ---- Bottom: error + continue button ---- */}
-      <div className="flex w-full max-w-[430px] flex-col gap-2">
+      <div className="flex w-full max-w-[430px] flex-col gap-2 pt-6">
         {submitError && (
           <p className="text-center text-sm text-red-600">{submitError}</p>
         )}
@@ -314,11 +314,11 @@ function OptionButton({
       }`}
     >
       <div
-        className={`flex h-[50px] flex-1 items-center justify-center overflow-hidden rounded-[14px] px-[19px] py-[13px] ${
+        className={`flex min-h-[50px] flex-1 items-center justify-center rounded-[14px] px-[19px] py-[13px] ${
           selected ? "border border-solid border-[#186346]" : ""
         }`}
       >
-        <span className="text-center text-lg text-black">
+        <span className="text-center text-lg leading-snug text-black">
           {emoji && <span className="mr-2">{emoji}</span>}
           {label}
         </span>
