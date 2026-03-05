@@ -6,6 +6,8 @@ import { dailyCheckInQuestions } from "@/lib/questions";
 import { calculateSepsisRisk } from "@/lib/riskCalculator";
 import type { Question } from "@/lib/questions/types";
 import { createClient } from "@/lib/supabase/client";
+import RiskGauge from "@/components/RiskGauge";
+import type { GaugeLevel } from "@/components/RiskGauge";
 
 // ============================================================================
 // Pure helper — evaluate a business-logic trigger condition
@@ -254,7 +256,6 @@ export default function CheckInPage() {
         if (res.ok) {
           setRiskResult(risk_level);
           setFinished(true);
-          setTimeout(() => router.push("/dashboard"), 2000);
         } else {
           const data = await res.json();
           setSubmitError(data.error ?? "Failed to save check-in data.");
@@ -343,44 +344,33 @@ export default function CheckInPage() {
 
   // ----- Completion screen -----
   if (finished) {
-    const riskLabel =
-      riskResult === "GREEN" ? "Low"
-      : riskResult === "YELLOW" ? "Moderate"
-      : riskResult === "RED" ? "High"
-      : riskResult === "RED_EMERGENCY" ? "Emergency"
-      : "Unknown";
-    const riskBg =
-      riskResult === "GREEN" ? "bg-green-100 text-green-800"
-      : riskResult === "YELLOW" ? "bg-yellow-100 text-yellow-800"
-      : "bg-red-100 text-red-800";
+    const gaugeLevel: GaugeLevel =
+      riskResult === "GREEN" ? "GREEN"
+      : riskResult === "YELLOW" ? "YELLOW"
+      : "RED";
 
     return (
       <div className={`${colors.bg} flex min-h-dvh flex-col items-center justify-between px-4 pb-20 pt-2.5`}>
         <div className="flex w-full max-w-[430px] flex-col gap-6">
-          <div className="flex flex-col items-end">
-            <button onClick={handleRestart} className="cursor-pointer rounded-[9px] bg-[#f4f4f4] px-3 py-[7px] text-xs font-medium text-black">
-              Restart chat
-            </button>
-          </div>
-          <div className="flex w-full flex-col gap-4">
-            <div className={`flex w-full items-center rounded-full ${colors.trackBg}`}>
-              <div className={`h-1.5 rounded-full ${colors.trackFill}`} style={{ width: "100%" }} />
-            </div>
-            <h1 className="text-[26px] font-semibold leading-normal text-black">
-              Daily Check-In Complete 🎉
-            </h1>
-            <p className="text-sm text-black/60">Your responses have been recorded. Thank you for checking in today.</p>
-            {riskResult && (
-              <div className={`mt-2 rounded-xl px-5 py-4 text-center ${riskBg}`}>
-                <p className="text-sm font-medium">Your risk level today:</p>
-                <p className="mt-1 text-xl font-bold">{riskLabel}</p>
-              </div>
-            )}
-          </div>
+          <button
+            onClick={handleRestart}
+            className="flex size-10 cursor-pointer items-center justify-center self-start"
+            aria-label="Go back"
+          >
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+              <path d="M15 18l-6-6 6-6" stroke="black" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+          </button>
+
+          <h1 className="w-full text-center text-[26px] font-semibold text-black">
+            Your Results
+          </h1>
+
+          <RiskGauge
+            level={gaugeLevel}
+            onDashboard={() => router.push("/dashboard")}
+          />
         </div>
-        <button onClick={handleRestart} className={`${colors.primaryBg} flex h-[50px] w-full max-w-[430px] cursor-pointer items-center justify-center rounded-[14px] px-6 py-[5px] text-lg font-semibold text-white`}>
-          Start Over
-        </button>
       </div>
     );
   }
