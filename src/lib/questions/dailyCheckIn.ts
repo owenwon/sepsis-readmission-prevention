@@ -373,34 +373,20 @@ export const dailyCheckInQuestions: Question[] = [
     type: 'single_select',
     options: [
       { label: 'Clear, white, or no mucus', value: 1 },
-      { label: 'Yellow', value: 2 },
-      { label: 'Green', value: 3 },
-      { label: 'Brown, pink, or red', value: 4 },
+      { label: 'Yellow or green', value: 2 },
+      { label: 'Brown, pink, or red', value: 3 },
       { label: 'No cough', value: 'none' },
     ],
     schemaField: ['has_cough', 'mucus_color_level'],
     businessLogic: {
       mapToMultipleFields: true,
-      customMapping: (value: number | string) => {
-        // UI values are unique (1,2,3,4) for React keys / selection,
-        // but clinical levels need 1,2,2,3 because yellow and green
-        // are the same clinical concern level for the risk calculator
-        // All keys are explicit strings so JS object key coercion never produces
-        // an accidental undefined when the value arrives as a string from JSON.
-        const clinicalLevel: Record<string, number | null> = {
-          '1': 1,    // clear/white → clinical level 1
-          '2': 2,    // yellow → clinical level 2
-          '3': 2,    // green → clinical level 2 (same clinical concern as yellow)
-          '4': 3,    // brown/pink/red → clinical level 3
-          'none': null,
-        };
-        return {
-          has_cough: value !== 'none',
-          // String(value) normalizes both numeric and string inputs before lookup,
-          // preventing undefined from silently setting mucus_color_level to null.
-          mucus_color_level: clinicalLevel[String(value)] ?? null,
-        };
-      },
+      customMapping: (value: number | string) => ({
+        has_cough: value !== 'none',
+        // value 'none' means no cough — send null to the DB (mucus_color_level
+        // is nullable). Otherwise cast to Number so the INTEGER column always
+        // receives 1, 2, or 3 and never the raw string from the UI option value.
+        mucus_color_level: value === 'none' ? null : Number(value),
+      }),
     },
   },
 

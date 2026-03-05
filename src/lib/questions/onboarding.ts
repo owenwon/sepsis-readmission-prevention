@@ -88,10 +88,10 @@ export const onboardingQuestions: Question[] = [
     caregiverText: "If not currently hospitalized, how long ago was the patient's last sepsis-related admission?",
     type: 'single_select',
     options: [
-      { label: 'Less than 7 days ago', value: '3' },
-      { label: '1–4 weeks ago', value: '17' },
-      { label: '1–3 months ago', value: '60' },
-      { label: 'More than 3 months ago', value: '120' },
+      { label: 'Less than 7 days ago', value: 3 },
+      { label: '1–4 weeks ago', value: 17 },
+      { label: '1–3 months ago', value: 60 },
+      { label: 'More than 3 months ago', value: 120 },
     ],
     schemaField: ['days_since_last_discharge', 'sepsis_status'],
     helpText: 'Pick the date you were released from the hospital, not when you first got sick.',
@@ -101,9 +101,9 @@ export const onboardingQuestions: Question[] = [
     ],
     businessLogic: {
       mapToMultipleFields: true,
-      customMapping: (value: string) => ({
-        days_since_last_discharge: parseInt(value),
-        sepsis_status: parseInt(value) <= 90 ? 'recently_discharged' : 'other',
+      customMapping: (value) => ({
+        days_since_last_discharge: value,
+        sepsis_status: value <= 90 ? 'recently_discharged' : 'other',
       }),
     },
   },
@@ -647,7 +647,6 @@ export const onboardingQuestions: Question[] = [
       { label: '24/7 (Full-time)', value: 'full_time' },
       { label: 'Only some days (Part-time)', value: 'part_time' },
       { label: 'Occasionally', value: 'occasional' },
-      { label: 'None', value: 'none' },
     ],
     schemaField: 'caregiver_availability',
     prerequisites: [
@@ -657,13 +656,8 @@ export const onboardingQuestions: Question[] = [
       mapToMultipleFields: true,
       customMapping: (value: string) => ({
         caregiver_availability: value,
-        // When the user selects 'none' here, retroactively set has_caregiver
-        // to false so both columns remain consistent in the DB. This situation
-        // arises because the question is gated behind has_caregiver === true,
-        // but the user may have answered 'yes' to has_caregiver and then
-        // clarified 'none' here. Without this correction, has_caregiver stays
-        // true while caregiver_availability is 'none' — contradictory data.
-        has_caregiver: value !== 'none',
+        // has_caregiver correction removed — 'none' option no longer exists,
+        // so this question is only reachable when has_caregiver is already true.
       }),
     },
   },
