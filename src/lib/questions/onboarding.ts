@@ -43,7 +43,6 @@ export const onboardingQuestions: Question[] = [
       minLength: 2,
       maxLength: 100,
     },
-    placeholder: 'Enter full name',
   },
 
   {
@@ -774,7 +773,6 @@ export const onboardingQuestions: Question[] = [
       min: 60,
       max: 250,
     },
-    placeholder: 'e.g., 120',
     unit: 'mmHg',
   },
 

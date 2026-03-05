@@ -194,7 +194,6 @@ export const dailyCheckInQuestions: Question[] = [
       min: 90.0,
       max: 110.0,
     },
-    placeholder: 'e.g., 98.6',
     unit: '°F',
     businessLogic: {
       terminatesSurvey: true,
@@ -225,7 +224,6 @@ export const dailyCheckInQuestions: Question[] = [
       min: 0,
       max: 100,
     },
-    placeholder: 'e.g., 98',
     unit: '%',
     businessLogic: {
       terminatesSurvey: true,
@@ -271,7 +269,6 @@ export const dailyCheckInQuestions: Question[] = [
       min: 30,
       max: 250,
     },
-    placeholder: 'e.g., 72',
     unit: 'bpm',
     businessLogic: {
       terminatesSurvey: true,
@@ -303,7 +300,6 @@ export const dailyCheckInQuestions: Question[] = [
       min: 60,
       max: 250,
     },
-    placeholder: 'e.g., 120',
     unit: 'mmHg',
     businessLogic: {
       requiresUrgentAlert: true,
@@ -454,7 +450,6 @@ export const dailyCheckInQuestions: Question[] = [
     caregiverText: 'Anything else you would like to log about the patient?',
     type: 'textarea',
     schemaField: 'additional_notes',
-    placeholder: 'Optional - Any other symptoms, concerns, or observations...',
     validation: {
       maxLength: 1000,
     },
