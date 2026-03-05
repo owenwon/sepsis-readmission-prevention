@@ -4,7 +4,8 @@ import { useState, useMemo, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { dailyCheckInQuestions } from "@/lib/questions";
 import { calculateSepsisRisk } from "@/lib/riskCalculator";
-import type { Question, QuestionOption } from "@/lib/questions/types";
+import type { Question } from "@/lib/questions/types";
+import { createClient } from "@/lib/supabase/client";
 
 // ============================================================================
 // Pure helper — evaluate a business-logic trigger condition
@@ -37,11 +38,29 @@ const colors = {
   trackFill: "bg-[#186346]",
 };
 
+// The subset of patient profile fields the check-in page needs.
+// Onboarding flags gate which vital questions appear; is_caregiver
+// controls which question text variant is shown.
+type PatientProfile = {
+  is_caregiver: boolean;
+  has_thermometer: boolean;
+  has_pulse_oximeter: boolean;
+  has_bp_cuff: boolean;
+  has_hr_monitor: boolean;
+  has_recent_uti: boolean;
+};
+
 // ============================================================================
 // Main page
 // ============================================================================
 export default function CheckInPage() {
   const router = useRouter();
+  const supabase = createClient();
+
+  const [profile, setProfile] = useState<PatientProfile | null>(null);
+  const [profileLoading, setProfileLoading] = useState(true);
+  const [profileError, setProfileError] = useState<string | null>(null);
+
   const [answers, setAnswers] = useState<Record<string, any>>({});
   const [currentIndex, setCurrentIndex] = useState(0);
   const [finished, setFinished] = useState(false);
@@ -51,48 +70,101 @@ export default function CheckInPage() {
   const [emergency, setEmergency] = useState<{ message: string; emergencyMessage?: string } | null>(null);
   const [emergencyDismissed, setEmergencyDismissed] = useState(false);
 
-  // Filter questions based on prerequisites (only evaluate 'current' source)
-  const visibleQuestions = dailyCheckInQuestions.filter((q) => {
-    if (q.prerequisites && q.prerequisites.length > 0) {
-      return q.prerequisites.every((prereq) => {
-        if (prereq.source === "onboarding") return true;
+  // ------------------------------------------------------------------
+  // Fetch patient profile once on mount so we know is_caregiver and
+  // which onboarding device flags were set. These are stored in the DB
+  // after onboarding completes and must not be re-derived from local
+  // answers here — the check-in session has no onboarding answers.
+  // ------------------------------------------------------------------
+  useEffect(() => {
+    async function fetchProfile() {
+      try {
+        const { data: { user }, error: authError } = await supabase.auth.getUser();
+        if (authError || !user) {
+          setProfileError("Not authenticated.");
+          setProfileLoading(false);
+          return;
+        }
 
+        const { data, error } = await supabase
+          .from("patients")
+          .select(
+            "is_caregiver, has_thermometer, has_pulse_oximeter, has_bp_cuff, has_hr_monitor, has_recent_uti"
+          )
+          .eq("user_id", user.id)
+          .single();
+
+        if (error || !data) {
+          setProfileError("Could not load your profile. Please complete onboarding first.");
+          setProfileLoading(false);
+          return;
+        }
+
+        setProfile(data as PatientProfile);
+      } catch (err: any) {
+        setProfileError(err.message ?? "Unexpected error loading profile.");
+      } finally {
+        setProfileLoading(false);
+      }
+    }
+
+    fetchProfile();
+  }, []);
+
+  const isCaregiver = profile?.is_caregiver ?? false;
+
+  // ------------------------------------------------------------------
+  // Filter questions based on prerequisites.
+  // For 'onboarding' source prerequisites, resolve against the fetched
+  // profile instead of the current answers object — those fields were
+  // set during onboarding and live in the DB, not in this session.
+  // ------------------------------------------------------------------
+  const visibleQuestions = useMemo(() => {
+    if (!profile) return [];
+
+    return dailyCheckInQuestions.filter((q) => {
+      if (!q.prerequisites || q.prerequisites.length === 0) return true;
+
+      return q.prerequisites.every((prereq) => {
+        if (prereq.source === "onboarding") {
+          // Resolve against the DB profile, not local answers
+          const profileValue = (profile as any)[prereq.field];
+          if (profileValue === undefined) return false;
+          switch (prereq.operator) {
+            case "==": return profileValue === prereq.value;
+            case "!=": return profileValue !== prereq.value;
+            case ">":  return profileValue > prereq.value;
+            case "<":  return profileValue < prereq.value;
+            case ">=": return profileValue >= prereq.value;
+            case "<=": return profileValue <= prereq.value;
+            default:   return true;
+          }
+        }
+
+        // 'current' source — resolve against this session's answers
         const answer = answers[prereq.field];
         if (answer === undefined) return false;
-
         switch (prereq.operator) {
-          case "==":
-            return answer === prereq.value;
-          case "!=":
-            return answer !== prereq.value;
-          case ">":
-            return answer > prereq.value;
-          case "<":
-            return answer < prereq.value;
-          case ">=":
-            return answer >= prereq.value;
-          case "<=":
-            return answer <= prereq.value;
-          case "includes":
-            return Array.isArray(answer) && answer.includes(prereq.value);
-          case "excludes":
-            return Array.isArray(answer) && !answer.includes(prereq.value);
-          default:
-            return true;
+          case "==":       return answer === prereq.value;
+          case "!=":       return answer !== prereq.value;
+          case ">":        return answer > prereq.value;
+          case "<":        return answer < prereq.value;
+          case ">=":       return answer >= prereq.value;
+          case "<=":       return answer <= prereq.value;
+          case "includes": return Array.isArray(answer) && answer.includes(prereq.value);
+          case "excludes": return Array.isArray(answer) && !answer.includes(prereq.value);
+          default:         return true;
         }
       });
-    }
-    return true;
-  });
+    });
+  }, [profile, answers]);
 
   const currentQuestion = visibleQuestions[currentIndex];
   const totalQuestions = visibleQuestions.length;
   const currentValue = currentQuestion
     ? (answers[`__ui__${currentQuestion.id}`] ?? answers[currentQuestion.id])
     : undefined;
-  // boolean, single_select, and scale questions are always required regardless
-  // of whether validation.required is explicitly set — every question in this
-  // survey has enough options that skipping is never appropriate.
+
   const isImplicitlyRequired =
     currentQuestion?.type === 'boolean' ||
     currentQuestion?.type === 'single_select' ||
@@ -100,30 +172,20 @@ export default function CheckInPage() {
   const isRequired = currentQuestion?.validation?.required === true || isImplicitlyRequired;
   const hasAnswer = !isRequired || (currentValue !== undefined && currentValue !== "" && currentValue !== null);
 
-  // Progress only recalculates when currentIndex changes (on Continue click),
-  // NOT when totalQuestions changes from answer selection affecting prerequisites.
-    const progressPct = useMemo(
-      () => (totalQuestions > 0 ? (currentIndex / totalQuestions) * 100 : 0),
-      [currentIndex]
-    );
+  const progressPct = useMemo(
+    () => (totalQuestions > 0 ? (currentIndex / totalQuestions) * 100 : 0),
+    [currentIndex]
+  );
 
-  const setAnswer = (question: Question, value: any) => {   
+  const setAnswer = (question: Question, value: any) => {
     setAnswers((prev) => {
       const updated = { ...prev };
 
-      // Always store raw UI value under a __ui__ prefixed key for selection
-      // highlighting. This never reaches the DB because ALLOWED_COLUMNS won't
-      // include it, and it doesn't collide with schema field keys.
       updated[`__ui__${question.id}`] = value;
-      // Also store under question.id for backwards compat with prerequisites
-      // that reference question ids directly (e.g. fever_chills, heart_racing).
       updated[question.id] = value;
 
       if (question.businessLogic?.mapToMultipleFields && question.businessLogic.customMapping) {
         const mapped = question.businessLogic.customMapping(value);
-        // Mapped values are DB-ready and overwrite the raw value for schema keys.
-        // For wound_state_level: writes null over 'none' under wound_state_level.
-        // The UI reads __ui__wound_state_level for highlighting, not this key.
         Object.assign(updated, mapped);
       }
 
@@ -146,38 +208,30 @@ export default function CheckInPage() {
       });
     } catch {
       // Silently ignore — the emergency UI is already showing.
-      // A failed partial submit should not block the user from seeing the alert.
     }
   };
 
   const handleContinue = async () => {
-    // Check if the current question triggers an emergency before advancing.
     if (
       currentQuestion?.businessLogic?.requiresEmergencyAlert &&
       currentQuestion.businessLogic.triggerWhen &&
       evaluateTrigger(
         currentQuestion.businessLogic.triggerWhen.operator,
         currentQuestion.businessLogic.triggerWhen.value,
-        currentValue  // the already-stored answer for the current question
+        currentValue
       )
     ) {
       setEmergency({
         message: currentQuestion.businessLogic.terminationMessage ?? 'Seek emergency care immediately.',
-        // No emergencyMessage here — the risk calculator hasn't run yet at this point.
-        // terminationMessage from the question definition is the correct source.
       });
-      return; // stop — don't advance or submit
+      return;
     }
     if (!hasAnswer) return;
     if (currentIndex < totalQuestions - 1) {
       setCurrentIndex(currentIndex + 1);
     } else {
-      // Last question — calculate risk and submit
       const riskCalcResult = calculateSepsisRisk(answers as any);
       const risk_level = riskCalcResult.riskLevel;
-      // Spread computed zones into the payload so the DB zone_consistency constraints
-      // are satisfied. Each zone column must accompany its corresponding value column
-      // or the CHECK constraint rejects the row.
       const { zones } = riskCalcResult;
 
       if (risk_level === 'RED_EMERGENCY') {
@@ -219,13 +273,29 @@ export default function CheckInPage() {
     setAnswers({});
   };
 
-  // Redirect after emergency dismissal
   useEffect(() => {
     if (emergencyDismissed) {
       const timer = setTimeout(() => router.push('/dashboard'), 2000);
       return () => clearTimeout(timer);
     }
   }, [emergencyDismissed]);
+
+  // ----- Loading / error states -----
+  if (profileLoading) {
+    return (
+      <div className={`${colors.bg} flex min-h-dvh items-center justify-center px-4`}>
+        <p className="text-base text-black/50">Loading your profile…</p>
+      </div>
+    );
+  }
+
+  if (profileError) {
+    return (
+      <div className={`${colors.bg} flex min-h-dvh items-center justify-center px-4`}>
+        <p className="text-base text-red-600">{profileError}</p>
+      </div>
+    );
+  }
 
   // ----- Emergency alert overlay -----
   if (emergency && !emergencyDismissed) {
@@ -274,35 +344,24 @@ export default function CheckInPage() {
   // ----- Completion screen -----
   if (finished) {
     const riskLabel =
-      riskResult === "GREEN"
-        ? "Low"
-        : riskResult === "YELLOW"
-          ? "Moderate"
-          : riskResult === "RED"
-            ? "High"
-            : riskResult === "RED_EMERGENCY"
-              ? "Emergency"
-              : "Unknown";
+      riskResult === "GREEN" ? "Low"
+      : riskResult === "YELLOW" ? "Moderate"
+      : riskResult === "RED" ? "High"
+      : riskResult === "RED_EMERGENCY" ? "Emergency"
+      : "Unknown";
     const riskBg =
-      riskResult === "GREEN"
-        ? "bg-green-100 text-green-800"
-        : riskResult === "YELLOW"
-          ? "bg-yellow-100 text-yellow-800"
-          : "bg-red-100 text-red-800";
+      riskResult === "GREEN" ? "bg-green-100 text-green-800"
+      : riskResult === "YELLOW" ? "bg-yellow-100 text-yellow-800"
+      : "bg-red-100 text-red-800";
 
     return (
       <div className={`${colors.bg} flex min-h-dvh flex-col items-center justify-between px-4 pb-20 pt-2.5`}>
         <div className="flex w-full max-w-[430px] flex-col gap-6">
           <div className="flex flex-col items-end">
-            <button
-              onClick={handleRestart}
-              className="cursor-pointer rounded-[9px] bg-[#f4f4f4] px-3 py-[7px] text-xs font-medium text-black"
-            >
+            <button onClick={handleRestart} className="cursor-pointer rounded-[9px] bg-[#f4f4f4] px-3 py-[7px] text-xs font-medium text-black">
               Restart chat
             </button>
           </div>
-
-          {/* Full progress bar */}
           <div className="flex w-full flex-col gap-4">
             <div className={`flex w-full items-center rounded-full ${colors.trackBg}`}>
               <div className={`h-1.5 rounded-full ${colors.trackFill}`} style={{ width: "100%" }} />
@@ -311,7 +370,6 @@ export default function CheckInPage() {
               Daily Check-In Complete 🎉
             </h1>
             <p className="text-sm text-black/60">Your responses have been recorded. Thank you for checking in today.</p>
-
             {riskResult && (
               <div className={`mt-2 rounded-xl px-5 py-4 text-center ${riskBg}`}>
                 <p className="text-sm font-medium">Your risk level today:</p>
@@ -320,11 +378,7 @@ export default function CheckInPage() {
             )}
           </div>
         </div>
-
-        <button
-          onClick={handleRestart}
-          className={`${colors.primaryBg} flex h-[50px] w-full max-w-[430px] cursor-pointer items-center justify-center rounded-[14px] px-6 py-[5px] text-lg font-semibold text-white`}
-        >
+        <button onClick={handleRestart} className={`${colors.primaryBg} flex h-[50px] w-full max-w-[430px] cursor-pointer items-center justify-center rounded-[14px] px-6 py-[5px] text-lg font-semibold text-white`}>
           Start Over
         </button>
       </div>
@@ -340,25 +394,29 @@ export default function CheckInPage() {
     );
   }
 
-  const questionText = currentQuestion.patientText;
-  const helpText = currentQuestion.helpText;
+  // ------------------------------------------------------------------
+  // Pick the correct text variant based on the user's role from the DB.
+  // Falls back to patientText/helpText if caregiverText is not defined,
+  // mirroring the same fallback pattern used in onboarding.
+  // ------------------------------------------------------------------
+  const questionText = isCaregiver
+    ? (currentQuestion.caregiverText ?? currentQuestion.patientText)
+    : currentQuestion.patientText;
+
+  const helpText = isCaregiver
+    ? (currentQuestion.caregiverHelpText ?? currentQuestion.helpText)
+    : currentQuestion.helpText;
 
   // ----- Main question screen -----
   return (
     <div className={`${colors.bg} flex min-h-dvh flex-col items-center justify-between px-4 pb-20 pt-2.5`}>
-      {/* ---- Top: restart, progress, question, options ---- */}
       <div className="flex w-full max-w-[430px] flex-col gap-6">
-        {/* Restart button */}
         <div className="flex flex-col items-end">
-          <button
-            onClick={handleRestart}
-            className="cursor-pointer rounded-[9px] bg-[#f4f4f4] px-3 py-[7px] text-xs font-medium text-black"
-          >
+          <button onClick={handleRestart} className="cursor-pointer rounded-[9px] bg-[#f4f4f4] px-3 py-[7px] text-xs font-medium text-black">
             Restart chat
           </button>
         </div>
 
-        {/* Progress bar + question text */}
         <div className="flex w-full flex-col gap-4">
           <div className={`flex w-full items-center rounded-full ${colors.trackBg}`}>
             <div
@@ -366,17 +424,14 @@ export default function CheckInPage() {
               style={{ width: `${progressPct}%` }}
             />
           </div>
-
           <h2 className="text-[26px] font-semibold leading-normal text-black">
             {questionText}
           </h2>
-
           {helpText && (
             <p className="text-sm leading-relaxed text-black/50">{helpText}</p>
           )}
         </div>
 
-        {/* Answer options */}
         <QuestionInput
           question={currentQuestion}
           value={currentValue}
@@ -384,7 +439,6 @@ export default function CheckInPage() {
         />
       </div>
 
-      {/* ---- Bottom: error + continue button ---- */}
       <div className="flex w-full max-w-[430px] flex-col gap-2 pt-6">
         {submitError && (
           <p className="text-center text-sm text-red-600">{submitError}</p>
@@ -398,11 +452,7 @@ export default function CheckInPage() {
               : `${colors.disabledBg} ${colors.disabledText} cursor-default`
           }`}
         >
-          {submitting
-            ? "Saving..."
-            : currentIndex === totalQuestions - 1
-              ? "Finish"
-              : "Continue"}
+          {submitting ? "Saving..." : currentIndex === totalQuestions - 1 ? "Finish" : "Continue"}
         </button>
       </div>
     </div>
@@ -410,35 +460,19 @@ export default function CheckInPage() {
 }
 
 // ============================================================================
-// Shared option‑button component (matches Figma "Button: Option")
+// Shared option-button component
 // ============================================================================
 function OptionButton({
-  label,
-  selected,
-  onClick,
-  emoji,
-  description,
+  label, selected, onClick, emoji,
 }: {
-  label: string;
-  selected: boolean;
-  onClick: () => void;
-  emoji?: string;
-  description?: string;
+  label: string; selected: boolean; onClick: () => void; emoji?: string; description?: string;
 }) {
   return (
     <button
       onClick={onClick}
-      className={`flex w-full cursor-pointer items-center justify-center rounded-[14px] transition-colors duration-150 ${
-        selected
-          ? "bg-[#dcf5f0]"
-          : "bg-[#f4f4f4]"
-      }`}
+      className={`flex w-full cursor-pointer items-center justify-center rounded-[14px] transition-colors duration-150 ${selected ? "bg-[#dcf5f0]" : "bg-[#f4f4f4]"}`}
     >
-      <div
-        className={`flex min-h-[50px] flex-1 items-center justify-center rounded-[14px] px-[19px] py-[13px] ${
-          selected ? "border border-solid border-[#186346]" : ""
-        }`}
-      >
+      <div className={`flex min-h-[50px] flex-1 items-center justify-center rounded-[14px] px-[19px] py-[13px] ${selected ? "border border-solid border-[#186346]" : ""}`}>
         <span className="text-center text-lg leading-snug text-black">
           {emoji && <span className="mr-2">{emoji}</span>}
           {label}
@@ -449,19 +483,10 @@ function OptionButton({
 }
 
 // ============================================================================
-// Question input renderer – styled per Figma
+// Question input renderer
 // ============================================================================
-function QuestionInput({
-  question,
-  value,
-  onChange,
-}: {
-  question: Question;
-  value: any;
-  onChange: (value: any) => void;
-}) {
+function QuestionInput({ question, value, onChange }: { question: Question; value: any; onChange: (value: any) => void; }) {
   switch (question.type) {
-    // ---- Boolean (Yes / No) ----
     case "boolean":
       return (
         <div className="flex w-full flex-col gap-4">
@@ -469,25 +494,14 @@ function QuestionInput({
           <OptionButton label="No" selected={value === false} onClick={() => onChange(false)} />
         </div>
       );
-
-    // ---- Single select ----
     case "single_select":
       return (
         <div className="flex w-full flex-col gap-4">
           {question.options?.map((option) => (
-            <OptionButton
-              key={String(option.value)}
-              label={option.label}
-              emoji={option.iconEmoji}
-              description={option.description}
-              selected={value === option.value}
-              onClick={() => onChange(option.value)}
-            />
+            <OptionButton key={String(option.value)} label={option.label} emoji={option.iconEmoji} description={option.description} selected={value === option.value} onClick={() => onChange(option.value)} />
           ))}
         </div>
       );
-
-    // ---- Multi select ----
     case "multi_select": {
       const selected: any[] = Array.isArray(value) ? value : [];
       return (
@@ -500,15 +514,10 @@ function QuestionInput({
                 label={`${option.iconEmoji ? option.iconEmoji + " " : ""}${option.label}`}
                 selected={isChecked}
                 onClick={() => {
-                  if (option.value === "none") {
-                    onChange(isChecked ? [] : ["none"]);
-                  } else {
+                  if (option.value === "none") { onChange(isChecked ? [] : ["none"]); }
+                  else {
                     const withoutNone = selected.filter((v) => v !== "none");
-                    onChange(
-                      isChecked
-                        ? withoutNone.filter((v) => v !== option.value)
-                        : [...withoutNone, option.value]
-                    );
+                    onChange(isChecked ? withoutNone.filter((v) => v !== option.value) : [...withoutNone, option.value]);
                   }
                 }}
               />
@@ -517,78 +526,24 @@ function QuestionInput({
         </div>
       );
     }
-
-    // ---- Text ----
     case "text":
-      return (
-        <input
-          type="text"
-          value={value || ""}
-          onChange={(e) => onChange(e.target.value)}
-          placeholder={question.placeholder}
-          className="h-[50px] w-full rounded-[14px] bg-[#f4f4f4] px-5 py-3 text-lg text-black outline-none placeholder:text-[#a0a09b] focus:ring-2 focus:ring-[#186346]"
-        />
-      );
-
-    // ---- Textarea ----
+      return <input type="text" value={value || ""} onChange={(e) => onChange(e.target.value)} placeholder={question.placeholder} className="h-[50px] w-full rounded-[14px] bg-[#f4f4f4] px-5 py-3 text-lg text-black outline-none placeholder:text-[#a0a09b] focus:ring-2 focus:ring-[#186346]" />;
     case "textarea":
-      return (
-        <textarea
-          value={value || ""}
-          onChange={(e) => onChange(e.target.value)}
-          placeholder={question.placeholder}
-          rows={4}
-          className="w-full rounded-[14px] bg-[#f4f4f4] px-5 py-4 text-lg text-black outline-none placeholder:text-[#a0a09b] focus:ring-2 focus:ring-[#186346]"
-        />
-      );
-
-    // ---- Integer ----
+      return <textarea value={value || ""} onChange={(e) => onChange(e.target.value)} placeholder={question.placeholder} rows={4} className="w-full rounded-[14px] bg-[#f4f4f4] px-5 py-4 text-lg text-black outline-none placeholder:text-[#a0a09b] focus:ring-2 focus:ring-[#186346]" />;
     case "integer":
       return (
         <div className="flex w-full items-center gap-3">
-          <input
-            type="number"
-            inputMode="numeric"
-            value={value ?? ""}
-            onChange={(e) =>
-              onChange(e.target.value === "" ? undefined : parseInt(e.target.value))
-            }
-            placeholder={question.placeholder}
-            min={question.validation?.min}
-            max={question.validation?.max}
-            step={1}
-            className="h-[50px] flex-1 rounded-[14px] bg-[#f4f4f4] px-5 py-3 text-lg text-black outline-none placeholder:text-[#a0a09b] focus:ring-2 focus:ring-[#186346]"
-          />
-          {question.unit && (
-            <span className="shrink-0 text-base font-medium text-black/60">{question.unit}</span>
-          )}
+          <input type="number" inputMode="numeric" value={value ?? ""} onChange={(e) => onChange(e.target.value === "" ? undefined : parseInt(e.target.value))} placeholder={question.placeholder} min={question.validation?.min} max={question.validation?.max} step={1} className="h-[50px] flex-1 rounded-[14px] bg-[#f4f4f4] px-5 py-3 text-lg text-black outline-none placeholder:text-[#a0a09b] focus:ring-2 focus:ring-[#186346]" />
+          {question.unit && <span className="shrink-0 text-base font-medium text-black/60">{question.unit}</span>}
         </div>
       );
-
-    // ---- Float ----
     case "float":
       return (
         <div className="flex w-full items-center gap-3">
-          <input
-            type="number"
-            inputMode="decimal"
-            value={value ?? ""}
-            onChange={(e) =>
-              onChange(e.target.value === "" ? undefined : parseFloat(e.target.value))
-            }
-            placeholder={question.placeholder}
-            min={question.validation?.min}
-            max={question.validation?.max}
-            step={0.1}
-            className="h-[50px] flex-1 rounded-[14px] bg-[#f4f4f4] px-5 py-3 text-lg text-black outline-none placeholder:text-[#a0a09b] focus:ring-2 focus:ring-[#186346]"
-          />
-          {question.unit && (
-            <span className="shrink-0 text-base font-medium text-black/60">{question.unit}</span>
-          )}
+          <input type="number" inputMode="decimal" value={value ?? ""} onChange={(e) => onChange(e.target.value === "" ? undefined : parseFloat(e.target.value))} placeholder={question.placeholder} min={question.validation?.min} max={question.validation?.max} step={0.1} className="h-[50px] flex-1 rounded-[14px] bg-[#f4f4f4] px-5 py-3 text-lg text-black outline-none placeholder:text-[#a0a09b] focus:ring-2 focus:ring-[#186346]" />
+          {question.unit && <span className="shrink-0 text-base font-medium text-black/60">{question.unit}</span>}
         </div>
       );
-
-    // ---- Scale (e.g. pain 0-10, overall feeling 1-5) ----
     case "scale": {
       const min = question.validation?.min ?? 0;
       const max = question.validation?.max ?? 10;
@@ -597,15 +552,7 @@ function QuestionInput({
         <div className="flex w-full flex-col gap-3">
           <div className="flex w-full flex-wrap justify-center gap-2">
             {steps.map((step) => (
-              <button
-                key={step}
-                onClick={() => onChange(step)}
-                className={`flex h-12 w-12 cursor-pointer items-center justify-center rounded-full text-lg font-medium transition-colors duration-150 ${
-                  value === step
-                    ? "border border-solid border-[#186346] bg-[#dcf5f0] text-black"
-                    : "bg-[#f4f4f4] text-black"
-                }`}
-              >
+              <button key={step} onClick={() => onChange(step)} className={`flex h-12 w-12 cursor-pointer items-center justify-center rounded-full text-lg font-medium transition-colors duration-150 ${value === step ? "border border-solid border-[#186346] bg-[#dcf5f0] text-black" : "bg-[#f4f4f4] text-black"}`}>
                 {step}
               </button>
             ))}
@@ -617,7 +564,6 @@ function QuestionInput({
         </div>
       );
     }
-
     default:
       return <p className="text-sm text-[#a0a09b]">Unsupported question type: {question.type}</p>;
   }
