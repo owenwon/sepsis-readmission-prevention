@@ -233,16 +233,13 @@ CREATE TABLE daily_checkins (
     -- Maps to dailyCheckin.ts questions: fainted_or_very_dizzy, breathing_level,
     --   thinking_level, extreme_heat_or_chills, discolored_skin
     -- Any trigger condition → RED_EMERGENCY in checkEmergencyConditions()
+    -- All BOOLEAN columns default to false so partial emergency submits
+    -- never leave these as NULL — they are answered before any emergency fires
+    -- or safely defaulted to false when the question was skipped.
     -- =========================================================================
     fainted_or_very_dizzy BOOLEAN DEFAULT false,
-    -- breathing_level and thinking_level are integers stored below (under their
-    -- respective sections) but both serve double duty as immediate danger triggers:
-    --   breathing_level = 3 → RED_EMERGENCY
-    --   thinking_level  = 3 → RED_EMERGENCY
     extreme_heat_or_chills BOOLEAN DEFAULT false,
     discolored_skin BOOLEAN DEFAULT false,
-    -- Note: discolored_skin triggers RED_EMERGENCY in checkEmergencyConditions().
-    -- It is grouped here logically even though it appears last in the survey UI.
 
     -- =========================================================================
     -- ENERGY & WELL-BEING SECTION
@@ -252,21 +249,24 @@ CREATE TABLE daily_checkins (
     --   energy_level     — 1=normal, 2=fatigued (+5, or +10 with has_heart_failure),
     --                                3=extremely fatigued (+15, or +25 with has_heart_failure)
     --   pain_level       — tracking only, no riskCalculator score impact
+    --
+    -- All nullable: emergency triggers at questions 1–5 leave these unanswered.
+    -- CHECK allows NULL via IS NULL OR guard.
     -- =========================================================================
-    overall_feeling INTEGER CHECK (overall_feeling BETWEEN 1 AND 5),
-    energy_level INTEGER CHECK (energy_level BETWEEN 1 AND 3),
-    pain_level INTEGER CHECK (pain_level BETWEEN 0 AND 10),
+    overall_feeling INTEGER CHECK (overall_feeling IS NULL OR overall_feeling BETWEEN 1 AND 5),
+    energy_level INTEGER CHECK (energy_level IS NULL OR energy_level BETWEEN 1 AND 3),
+    pain_level INTEGER CHECK (pain_level IS NULL OR pain_level BETWEEN 0 AND 10),
 
     -- =========================================================================
     -- VITALS — TEMPERATURE
     -- Maps to dailyCheckin.ts: fever_chills, temperature_value
-    -- temperature_zone is computed client-side by calculateZones() and stored here
-    -- for efficient querying (not re-derived server-side).
+    -- temperature_zone is computed client-side by calculateZones() and stored here.
     --
-    --   fever_chills     — subjective; if true AND !has_thermometer → +10 score
-    --   temperature_value — objective (°F); only collected when has_thermometer = true
+    --   fever_chills     — BOOLEAN DEFAULT false; always safe even on early exit
+    --   temperature_value — nullable; only collected when has_thermometer = true
     --   temperature_zone  — 1=green(96.8–99.9°F), 2=yellow(100–101.4°F), 3=red(otherwise)
     --                       Hard override: value ≥ 103.5°F → RED_EMERGENCY (app-enforced)
+    --   zone_consistency_temp CHECK enforces both NULL together or both non-NULL together
     -- =========================================================================
     fever_chills BOOLEAN DEFAULT false,
     temperature_value NUMERIC(4, 1) CHECK (
@@ -280,9 +280,10 @@ CREATE TABLE daily_checkins (
     -- Maps to dailyCheckin.ts: oxygen_level_value
     -- Only collected when patients.has_pulse_oximeter = true
     --
-    --   oxygen_level_value — objective (%); zone 2 → +15, zone 3 → +40
+    --   oxygen_level_value — nullable; zone 2 → +15, zone 3 → +40
     --   oxygen_level_zone  — 1=green(95–100%), 2=yellow(92–94%), 3=red(<92%)
     --                        Hard override: value < 90% → RED_EMERGENCY (app-enforced)
+    --   zone_consistency_o2 CHECK enforces both NULL together or both non-NULL together
     -- =========================================================================
     oxygen_level_value INTEGER CHECK (
         oxygen_level_value IS NULL OR
@@ -294,13 +295,11 @@ CREATE TABLE daily_checkins (
     -- VITALS — HEART RATE
     -- Maps to dailyCheckin.ts: heart_racing, heart_rate_value
     --
-    --   heart_racing     — subjective; if true AND !has_hr_monitor → +5 score
-    --   heart_rate_value — objective (bpm); only collected when heart_racing = true
-    --                      AND has_hr_monitor = true
+    --   heart_racing     — BOOLEAN DEFAULT false; always safe even on early exit
+    --   heart_rate_value — nullable; only collected when heart_racing = true AND has_hr_monitor = true
     --   heart_rate_zone  — 1=green(60–100bpm), 2=yellow(101–120bpm), 3=red(<60 or >120bpm)
-    --                      Zone 2 → +8 (or +15 with has_heart_failure)
-    --                      Zone 3 → +30 (or +40 with has_heart_failure)
     --                      Hard override: value > 140bpm → RED_EMERGENCY (app-enforced)
+    --   zone_consistency_hr CHECK enforces both NULL together or both non-NULL together
     -- =========================================================================
     heart_racing BOOLEAN DEFAULT false,
     heart_rate_value INTEGER CHECK (
@@ -314,13 +313,12 @@ CREATE TABLE daily_checkins (
     -- Maps to dailyCheckin.ts: blood_pressure_systolic
     -- Only collected when patients.has_bp_cuff = true
     --
-    --   blood_pressure_systolic — objective (mmHg); zone 2 → +8, zone 3 → +20
-    --   blood_pressure_zone     — computed relative to patients.baseline_bp_systolic
-    --                             (or 120 if NULL):
-    --                             1=green (within 20 of baseline)
-    --                             2=yellow (20–39 below baseline)
+    --   blood_pressure_systolic — nullable; zone 2 → +8, zone 3 → +20
+    --   blood_pressure_zone     — computed relative to patients.baseline_bp_systolic (or 120)
+    --                             1=green, 2=yellow (20–39 below baseline),
     --                             3=red (<90, >180, or ≥40 below baseline)
     --                             Hard override: zone 3 → RED_EMERGENCY (app-enforced)
+    --   zone_consistency_bp CHECK enforces both NULL together or both non-NULL together
     -- =========================================================================
     blood_pressure_systolic INTEGER CHECK (
         blood_pressure_systolic IS NULL OR
@@ -330,45 +328,54 @@ CREATE TABLE daily_checkins (
 
     -- =========================================================================
     -- MENTAL STATUS
-    -- Maps to dailyCheckin.ts: thinking_level
+    -- Maps to dailyCheckin.ts: thinking_level (question 3)
     --   1=clear, 2=slow or foggy (+8), 3=not making sense (→ RED_EMERGENCY)
+    --
+    -- NULLABLE: fainted_or_very_dizzy (question 1) can trigger RED_EMERGENCY
+    -- before this question is ever reached. NULL means "not assessed due to
+    -- early survey termination", not "answered 1". The route fills in
+    -- safe defaults for columns the riskCalculator requires but received NULL.
     -- =========================================================================
-    thinking_level INTEGER CHECK (thinking_level BETWEEN 1 AND 3),
+    thinking_level INTEGER CHECK (thinking_level IS NULL OR thinking_level BETWEEN 1 AND 3),
 
     -- =========================================================================
     -- BREATHING
-    -- Maps to dailyCheckin.ts: breathing_level
-    --   1=normal, 2=slightly difficult (+8, or +16 with has_lung_condition or has_heart_failure),
-    --   3=extremely difficult (→ RED_EMERGENCY)
+    -- Maps to dailyCheckin.ts: breathing_level (question 2)
+    --   1=normal, 2=slightly difficult (+8 or +16), 3=extremely difficult (→ RED_EMERGENCY)
+    --
+    -- NULLABLE: fainted_or_very_dizzy (question 1) can trigger RED_EMERGENCY
+    -- before breathing_level is answered. Same reasoning as thinking_level above.
     -- =========================================================================
-    breathing_level INTEGER CHECK (breathing_level BETWEEN 1 AND 3),
+    breathing_level INTEGER CHECK (breathing_level IS NULL OR breathing_level BETWEEN 1 AND 3),
 
     -- =========================================================================
     -- ORGAN FUNCTION — URINE
-    -- Maps to dailyCheckin.ts: urine_appearance_level, uti_symptoms_worsening
+    -- Maps to dailyCheckin.ts: urine_appearance_level (question 15), uti_symptoms_worsening
     --
     --   urine_appearance_level   — 1=normal, 2=cloudy/dark/smelly (+15),
     --                              3=very dark/bloody (+60)
+    --
+    -- NULLABLE: any emergency trigger at questions 1–13 (fainted, breathing=3,
+    -- thinking=3, extreme heat/chills, discolored skin, temperature ≥103.5°F,
+    -- oxygen <90%, heart rate >140bpm) leaves this unanswered. NULL means
+    -- "survey terminated before this section was reached."
+    --
     --   uti_symptoms_worsening   — only collected when patients.has_recent_uti = true
-    --                              'same' + has_recent_uti → +10 (or +18 with has_urinary_catheter)
-    --                              'worsened' + has_recent_uti → +30 (or +40 with has_urinary_catheter)
+    --                              Defaults to 'not_applicable' otherwise.
     -- =========================================================================
-    urine_appearance_level INTEGER CHECK (urine_appearance_level BETWEEN 1 AND 3),
+    urine_appearance_level INTEGER CHECK (urine_appearance_level IS NULL OR urine_appearance_level BETWEEN 1 AND 3),
     uti_symptoms_worsening uti_symptoms_type DEFAULT 'not_applicable',
 
     -- =========================================================================
     -- INFECTION — COUGH
-    -- Maps to dailyCheckin.ts: has_cough question (single_select with customMapping)
+    -- Maps to dailyCheckin.ts: cough_mucus_selection (single_select with customMapping)
     -- The question maps a single answer to two schema fields:
-    --   { has_cough: value !== 'none', mucus_color_level: value === 'none' ? null : value }
+    --   { has_cough: value !== 'none', mucus_color_level: value === 'none' ? null : Number(value) }
     --
-    --   has_cough        — true when any non-none option is selected
+    --   has_cough        — BOOLEAN DEFAULT false; safe on early exit
     --   mucus_color_level — 1=clear/white/none, 2=yellow/green, 3=brown/pink/red, null=no cough
-    --                       Level 2 → +10 (or +18 with has_lung_condition)
-    --                                  +10 additional if has_recent_pneumonia
-    --                       Level 3 → +30 (or +35 with has_lung_condition)
-    --                                  +10 additional if has_recent_pneumonia
-    --                       null or 1 with has_cough=true → +3
+    --                       Level 2 → +10 (or +18 with has_lung_condition) +10 if has_recent_pneumonia
+    --                       Level 3 → +30 (or +35 with has_lung_condition) +10 if has_recent_pneumonia
     -- =========================================================================
     has_cough BOOLEAN DEFAULT false,
     mucus_color_level INTEGER CHECK (
@@ -379,7 +386,7 @@ CREATE TABLE daily_checkins (
     -- =========================================================================
     -- INFECTION — WOUND
     -- Maps to dailyCheckin.ts: wound_state_level
-    -- Only collected when any wound is present (UI shows 'No wound present' option)
+    -- NULL when no wound present (user selects 'No wound present' option).
     --   1=healing/same, 2=looks different (+10), 3=infected: red/pus/swollen (+60)
     -- =========================================================================
     wound_state_level INTEGER CHECK (
@@ -390,21 +397,22 @@ CREATE TABLE daily_checkins (
     -- =========================================================================
     -- GI SYMPTOMS
     -- Maps to dailyCheckin.ts: nausea_vomiting_diarrhea → +5 score
+    -- BOOLEAN DEFAULT false; safe on early exit.
     -- =========================================================================
     nausea_vomiting_diarrhea BOOLEAN DEFAULT false,
 
     -- =========================================================================
     -- ADDITIONAL NOTES
     -- Maps to dailyCheckin.ts: additional_notes
-    -- Tracking only — no riskCalculator score impact
+    -- Tracking only — no riskCalculator score impact. Implicitly nullable.
     -- =========================================================================
     additional_notes TEXT,
 
     -- =========================================================================
     -- RISK LEVEL (OUTPUT)
     -- Calculated by riskCalculator.ts calculateSepsisRisk() client-side before insert.
-    -- Only the final risk_level is stored; all scoring logic runs in the app.
-    -- Mirrors RiskLevel type: 'GREEN' | 'YELLOW' | 'RED' | 'RED_EMERGENCY'
+    -- Always present — the route validates risk_level before upsert and rejects
+    -- any payload missing it. DEFAULT 'GREEN' is a safety net only.
     -- =========================================================================
     risk_level VARCHAR(20) DEFAULT 'GREEN' CHECK (
         risk_level IN ('GREEN', 'YELLOW', 'RED', 'RED_EMERGENCY')
@@ -414,8 +422,12 @@ CREATE TABLE daily_checkins (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
 
-    -- Constraints
+    -- Unique constraint: one check-in per patient per day (upsert target)
     CONSTRAINT unique_patient_date UNIQUE (patient_id, checkin_date),
+
+    -- Zone consistency constraints: each value column and its zone column must
+    -- both be NULL or both be non-NULL. A measured value without a computed zone
+    -- (or vice versa) would corrupt downstream risk queries.
     CONSTRAINT zone_consistency_temp CHECK (
         (temperature_value IS NULL AND temperature_zone IS NULL) OR
         (temperature_value IS NOT NULL AND temperature_zone IS NOT NULL)
@@ -681,7 +693,7 @@ WHERE p.user_id = auth.uid();
 -- =============================================================================
 
 COMMENT ON TABLE patients IS 'Patient onboarding data. Populated by onboarding.ts survey. Source of truth for all patient context fields read by riskCalculator.ts.';
-COMMENT ON TABLE daily_checkins IS 'Daily symptom check-ins and vitals. Populated by dailyCheckin.ts survey. risk_level is computed client-side by riskCalculator.ts before insert.';
+COMMENT ON TABLE daily_checkins IS 'Daily symptom check-ins and vitals. Populated by dailyCheckin.ts survey. risk_level is computed client-side by riskCalculator.ts before insert. thinking_level, breathing_level, and urine_appearance_level are nullable because emergency triggers at earlier questions can terminate the survey before these are reached.';
 
 COMMENT ON COLUMN patients.admitted_count IS 'Total sepsis hospitalizations. isHighRiskPatient() in riskCalculator: admitted_count > 1 → high risk (25% score multiplier).';
 COMMENT ON COLUMN patients.has_lung_condition IS 'True if patient has COPD, asthma, lung fibrosis, cystic fibrosis, or sleep apnea. Amplifies breathing_level=2 score (+8→+16) and mucus_color_level scores in riskCalculator.';
@@ -693,10 +705,29 @@ COMMENT ON COLUMN patients.is_high_risk IS 'Auto-calculated by trigger on INSERT
 COMMENT ON COLUMN patients.baseline_bp_systolic IS 'Baseline systolic BP from onboarding. Used by calculateZones() for blood pressure zone calculation. Defaults to 120 in riskCalculator if NULL.';
 
 COMMENT ON COLUMN daily_checkins.risk_level IS 'Final risk level from calculateSepsisRisk() in riskCalculator.ts. One of: GREEN, YELLOW, RED, RED_EMERGENCY. All scoring runs client-side before insert.';
-COMMENT ON COLUMN daily_checkins.mucus_color_level IS 'Mapped from dailyCheckin.ts has_cough question. 1=clear/white/none, 2=yellow/green, 3=brown/pink/red, NULL=no cough. Level 2 → +10 (or +18 with has_lung_condition). Level 3 → +30 (or +35 with has_lung_condition). +10 additional for either level if has_recent_pneumonia.';
+COMMENT ON COLUMN daily_checkins.thinking_level IS 'NULL when survey terminated before question 3 was reached (e.g. fainted_or_very_dizzy triggered at question 1). 1=clear, 2=slow/foggy (+8), 3=confused (→ RED_EMERGENCY).';
+COMMENT ON COLUMN daily_checkins.breathing_level IS 'NULL when survey terminated before question 2 was reached (e.g. fainted_or_very_dizzy triggered at question 1). 1=normal, 2=slightly difficult (+8 or +16), 3=extremely difficult (→ RED_EMERGENCY).';
+COMMENT ON COLUMN daily_checkins.urine_appearance_level IS 'NULL when survey terminated before question 15 was reached (any emergency trigger at questions 1–13). 1=normal, 2=cloudy/dark (+15), 3=very dark/bloody (+60).';
+COMMENT ON COLUMN daily_checkins.mucus_color_level IS 'Mapped from dailyCheckin.ts cough_mucus_selection question. 1=clear/white/none, 2=yellow/green, 3=brown/pink/red, NULL=no cough. Level 2 → +10 (or +18 with has_lung_condition). Level 3 → +30 (or +35 with has_lung_condition). +10 additional for either level if has_recent_pneumonia.';
 COMMENT ON COLUMN daily_checkins.uti_symptoms_worsening IS 'Only collected when patients.has_recent_uti = true. Defaults to not_applicable otherwise.';
 COMMENT ON COLUMN daily_checkins.wound_state_level IS 'NULL when no wound present. 1=healing/same, 2=looks different (+10), 3=infected (+60).';
 COMMENT ON COLUMN daily_checkins.discolored_skin IS 'Blue, purple, or gray discoloration of skin/lips/nails. Triggers RED_EMERGENCY in checkEmergencyConditions() regardless of other scores.';
+
+-- =============================================================================
+-- MIGRATION NOTES
+-- If running against an existing database, apply these three ALTER statements
+-- before running the full schema above, or run them as a standalone migration:
+--
+--   ALTER TABLE daily_checkins ALTER COLUMN thinking_level DROP NOT NULL;
+--   ALTER TABLE daily_checkins ALTER COLUMN breathing_level DROP NOT NULL;
+--   ALTER TABLE daily_checkins ALTER COLUMN urine_appearance_level DROP NOT NULL;
+--
+-- These three columns previously had implicit NOT NULL from their CHECK constraints
+-- (which lacked IS NULL OR guards). They must be nullable because emergency survey
+-- termination at questions 1–13 leaves them unanswered on partial check-in submits.
+-- The route's NUMERIC_RANGES guard already handles NULL correctly via the
+-- `payload[col] !== null` check and will not falsely reject these columns.
+-- =============================================================================
 
 -- =============================================================================
 -- SAMPLE DATA (Optional — uncomment to test)

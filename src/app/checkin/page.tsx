@@ -1,10 +1,25 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { dailyCheckInQuestions } from "@/lib/questions";
 import { calculateSepsisRisk } from "@/lib/riskCalculator";
 import type { Question, QuestionOption } from "@/lib/questions/types";
+
+// ============================================================================
+// Pure helper — evaluate a business-logic trigger condition
+// ============================================================================
+function evaluateTrigger(operator: string, triggerValue: any, answer: any): boolean {
+  switch (operator) {
+    case '==':  return answer === triggerValue;
+    case '!=':  return answer !== triggerValue;
+    case '>':   return answer > triggerValue;
+    case '<':   return answer < triggerValue;
+    case '>=':  return answer >= triggerValue;
+    case '<=':  return answer <= triggerValue;
+    default:    return false;
+  }
+}
 
 // ============================================================================
 // Design tokens from Figma
@@ -33,6 +48,8 @@ export default function CheckInPage() {
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [riskResult, setRiskResult] = useState<string | null>(null);
+  const [emergency, setEmergency] = useState<{ message: string; emergencyMessage?: string } | null>(null);
+  const [emergencyDismissed, setEmergencyDismissed] = useState(false);
 
   // Filter questions based on prerequisites (only evaluate 'current' source)
   const visibleQuestions = dailyCheckInQuestions.filter((q) => {
@@ -73,7 +90,14 @@ export default function CheckInPage() {
   const currentValue = currentQuestion
     ? (answers[`__ui__${currentQuestion.id}`] ?? answers[currentQuestion.id])
     : undefined;
-  const isRequired = currentQuestion?.validation?.required === true;
+  // boolean, single_select, and scale questions are always required regardless
+  // of whether validation.required is explicitly set — every question in this
+  // survey has enough options that skipping is never appropriate.
+  const isImplicitlyRequired =
+    currentQuestion?.type === 'boolean' ||
+    currentQuestion?.type === 'single_select' ||
+    currentQuestion?.type === 'scale';
+  const isRequired = currentQuestion?.validation?.required === true || isImplicitlyRequired;
   const hasAnswer = !isRequired || (currentValue !== undefined && currentValue !== "" && currentValue !== null);
 
   // Progress only recalculates when currentIndex changes (on Continue click),
@@ -111,7 +135,39 @@ export default function CheckInPage() {
     });
   };
 
+  const submitPartialCheckin = async () => {
+    try {
+      const riskCalcResult = calculateSepsisRisk(answers as any);
+      const { zones } = riskCalcResult;
+      await fetch("/api/checkin", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ answers: { ...answers, ...zones, risk_level: 'RED_EMERGENCY' } })
+      });
+    } catch {
+      // Silently ignore — the emergency UI is already showing.
+      // A failed partial submit should not block the user from seeing the alert.
+    }
+  };
+
   const handleContinue = async () => {
+    // Check if the current question triggers an emergency before advancing.
+    if (
+      currentQuestion?.businessLogic?.requiresEmergencyAlert &&
+      currentQuestion.businessLogic.triggerWhen &&
+      evaluateTrigger(
+        currentQuestion.businessLogic.triggerWhen.operator,
+        currentQuestion.businessLogic.triggerWhen.value,
+        currentValue  // the already-stored answer for the current question
+      )
+    ) {
+      setEmergency({
+        message: currentQuestion.businessLogic.terminationMessage ?? 'Seek emergency care immediately.',
+        // No emergencyMessage here — the risk calculator hasn't run yet at this point.
+        // terminationMessage from the question definition is the correct source.
+      });
+      return; // stop — don't advance or submit
+    }
     if (!hasAnswer) return;
     if (currentIndex < totalQuestions - 1) {
       setCurrentIndex(currentIndex + 1);
@@ -123,6 +179,16 @@ export default function CheckInPage() {
       // are satisfied. Each zone column must accompany its corresponding value column
       // or the CHECK constraint rejects the row.
       const { zones } = riskCalcResult;
+
+      if (risk_level === 'RED_EMERGENCY') {
+        setEmergency({
+          message: 'Your responses indicate a high-risk situation.',
+          emergencyMessage: riskCalcResult.emergencyMessage,
+        });
+        await submitPartialCheckin();
+        return;
+      }
+
       setSubmitting(true);
       setSubmitError(null);
       try {
@@ -152,6 +218,58 @@ export default function CheckInPage() {
     setCurrentIndex(0);
     setAnswers({});
   };
+
+  // Redirect after emergency dismissal
+  useEffect(() => {
+    if (emergencyDismissed) {
+      const timer = setTimeout(() => router.push('/dashboard'), 2000);
+      return () => clearTimeout(timer);
+    }
+  }, [emergencyDismissed]);
+
+  // ----- Emergency alert overlay -----
+  if (emergency && !emergencyDismissed) {
+    return (
+      <div className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-red-700 px-6 text-center">
+        <p className="text-5xl">🚨</p>
+        <h1 className="mt-6 text-2xl font-bold text-white leading-snug">
+          Based on your answers, we strongly recommend seeking emergency care right away.
+        </h1>
+        <p className="mt-4 text-base font-medium text-white/90">
+          Please contact emergency services or have someone take you to the nearest emergency room.
+        </p>
+        <p className="mt-3 text-sm text-white/70">
+          Do not drive yourself. If you are alone, call someone who can help or contact emergency services directly.
+        </p>
+        {(emergency.emergencyMessage || emergency.message) && (
+          <p className="mt-4 text-xs text-white/40">
+            {emergency.emergencyMessage ?? emergency.message}
+          </p>
+        )}
+        <button
+          onClick={async () => {
+            await submitPartialCheckin();
+            setEmergencyDismissed(true);
+          }}
+          className="mt-10 flex h-[54px] w-full max-w-[380px] cursor-pointer items-center justify-center rounded-[14px] bg-white px-6 text-lg font-semibold text-red-700"
+        >
+          I understand — go to my dashboard
+        </button>
+      </div>
+    );
+  }
+
+  if (emergency && emergencyDismissed) {
+    return (
+      <div className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-[#fdfbf5] px-6 text-center">
+        <p className="text-5xl">✅</p>
+        <h1 className="mt-6 text-xl font-semibold text-black">
+          Your responses have been recorded.
+        </h1>
+        <p className="mt-3 text-sm text-black/50">Returning you to your dashboard...</p>
+      </div>
+    );
+  }
 
   // ----- Completion screen -----
   if (finished) {
