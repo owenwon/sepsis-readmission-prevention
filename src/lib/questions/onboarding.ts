@@ -84,8 +84,8 @@ export const onboardingQuestions: Question[] = [
   {
     id: 'days_since_last_discharge',
     section: 'Sepsis Context',
-    patientText: 'If not currently hospitalized, how long ago was your last sepsis-related admission?',
-    caregiverText: "If not currently hospitalized, how long ago was the patient's last sepsis-related admission?",
+    patientText: 'How long ago was your last sepsis-related admission?',
+    caregiverText: "How long ago was the patient's last sepsis-related admission?",
     type: 'single_select',
     options: [
       { label: 'Less than 7 days ago', value: 3 },
