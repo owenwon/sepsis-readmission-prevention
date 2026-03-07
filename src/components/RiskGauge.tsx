@@ -15,27 +15,25 @@ const levelConfig: Record<
   }
 > = {
   GREEN: {
-    label: "Low Risk",
+    label: "No Signs\nof Infection",
     gaugeImage: "/images/gauge-green.svg",
     accentColor: "#4cc070",
-    cardTitle: "No significant risk at the moment!",
-    cardBody: "No need to call your doctor or 911",
+    cardTitle: "Continue home monitoring",
+    cardBody: "Your symptoms look stable. Keep up with your daily check-ins and reach out if anything changes.",
   },
   YELLOW: {
-    label: "Medium\nRisk",
+    label: "Concerning",
     gaugeImage: "/images/gauge-yellow.svg",
     accentColor: "#ffc800",
-    cardTitle: "Take action today",
-    cardBody:
-      "Get in contact with a doctor or nurse within 72 hours to discuss your symptoms and possible warning signs",
+    cardTitle: "Contact your provider today",
+    cardBody: "Some of your symptoms need attention. Call your doctor or nurse today to discuss what you're experiencing.",
   },
   RED: {
-    label: "High Risk",
+    label: "Urgent",
     gaugeImage: "/images/gauge-red.svg",
     accentColor: "#df0d3d",
-    cardTitle: "Take action now",
-    cardBody:
-      "Call your doctor in the next 24 hours to discuss the chance of a Sepsis recurrence.",
+    cardTitle: "Seek immediate medical attention",
+    cardBody: "Your symptoms indicate a serious concern. Call your doctor or visit urgent care now.",
   },
 };
 

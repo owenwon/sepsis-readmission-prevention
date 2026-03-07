@@ -147,6 +147,7 @@ export default function OnboardingPage() {
         setSubmitting(false);
       }
     }
+    window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
   const handleBack = () => {
