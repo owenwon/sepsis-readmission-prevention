@@ -95,8 +95,8 @@ export const dailyCheckInQuestions: Question[] = [
     section: 'Immediate Danger',
     patientText: 'Are your skin or lips an unusual shade of blue, purple, or gray?',
     caregiverText: "Are the patient's skin or lips an unusual shade of blue, purple, or gray?",
-    helpText: 'Check your face, lips, and fingernails in good lighting — bluish or grayish color can be a sign your body is not getting enough oxygen.',
-    caregiverHelpText: "Check the patient's face, lips, and fingernails in good lighting — bluish or grayish color can be a sign their body is not getting enough oxygen.",
+    helpText: 'Check your face and lips in good lighting — bluish or grayish color can be a sign your body is not getting enough oxygen.',
+    caregiverHelpText: "Check the patient's face and lips in good lighting — bluish or grayish color can be a sign their body is not getting enough oxygen.",
     type: 'boolean',
     schemaField: 'discolored_skin',
     businessLogic: {
