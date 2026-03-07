@@ -5,11 +5,33 @@ import { createClient } from "@/lib/supabase/client";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 
+/**
+ * Normalise Supabase password-policy error messages.
+ * Supabase sometimes returns a raw regex or pattern string (e.g. "ABCDE...").
+ * We intercept those and return a human-readable message instead.
+ */
+function friendlyPasswordError(msg: string): string {
+  const lower = msg.toLowerCase();
+  if (
+    lower.includes("abcde") ||
+    lower.includes("characters") ||
+    lower.includes("uppercase") ||
+    lower.includes("lowercase") ||
+    lower.includes("digit") ||
+    lower.includes("special") ||
+    lower.includes("password")
+  ) {
+    return "Password must contain at least 1 uppercase letter, 1 lowercase letter, 1 number, and 1 special character.";
+  }
+  return msg;
+}
+
 export default function SignupPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [passwordError, setPasswordError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState(false);
   const router = useRouter();
@@ -31,16 +53,17 @@ export default function SignupPage() {
   const handleSignup = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
+    setPasswordError(null);
 
     // Validate passwords match
     if (password !== confirmPassword) {
-      setError("Passwords do not match");
+      setPasswordError("Passwords do not match");
       return;
     }
 
     // Validate password strength
     if (password.length < 6) {
-      setError("Password must be at least 6 characters");
+      setPasswordError("Password must be at least 6 characters");
       return;
     }
 
@@ -55,7 +78,13 @@ export default function SignupPage() {
     });
 
     if (error) {
-      setError(error.message);
+      const friendly = friendlyPasswordError(error.message);
+      // If the friendly helper changed the string, it's a password error
+      if (friendly !== error.message) {
+        setPasswordError(friendly);
+      } else {
+        setError(error.message);
+      }
       setLoading(false);
     } else {
       setSuccess(true);
@@ -65,18 +94,18 @@ export default function SignupPage() {
 
   if (success) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
-        <div className="max-w-md w-full space-y-8 text-center">
-          <div className="bg-green-100 border border-green-400 text-green-700 px-6 py-8 rounded-lg">
-            <h2 className="text-2xl font-bold mb-4">Check your email!</h2>
-            <p className="mb-4">
+      <div className="min-h-dvh bg-[#fdfbf5] flex flex-col items-center px-4 pb-20 pt-2.5 font-[family-name:var(--font-poppins)]">
+        <div className="w-full max-w-[430px] flex flex-col gap-6 mt-10 text-center">
+          <div className="bg-[#dcf5f0] border border-solid border-[#186346] rounded-[14px] px-6 py-8">
+            <h2 className="text-[26px] font-semibold text-black mb-4">Check your email!</h2>
+            <p className="text-black mb-4">
               We&apos;ve sent a confirmation link to <strong>{email}</strong>
             </p>
-            <p className="text-sm">
+            <p className="text-sm text-black/50 leading-relaxed">
               Click the link in the email to activate your account, then come back to sign in.
             </p>
           </div>
-          <Link href="/login" className="text-green-600 hover:text-green-500 font-medium">
+          <Link href="/login" className="text-[#186346] hover:opacity-80 font-medium">
             ← Back to sign in
           </Link>
         </div>
@@ -85,104 +114,102 @@ export default function SignupPage() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
-      <div className="max-w-md w-full space-y-8">
+    <div className="min-h-dvh bg-[#fdfbf5] flex flex-col items-center px-4 pb-20 pt-2.5 font-[family-name:var(--font-poppins)]">
+      <div className="w-full max-w-[430px] flex flex-col gap-6 mt-10">
+        {/* Heading */}
         <div>
-          <h2 className="mt-6 text-center text-3xl font-extrabold text-gray-900">
+          <h2 className="text-[26px] font-semibold text-black">
             Create your account
           </h2>
-          <p className="mt-2 text-center text-sm text-gray-600">
-            Sepsis Readmission Prevention Tracker
-          </p>
         </div>
-        
-        <form className="mt-8 space-y-6" onSubmit={handleSignup}>
+
+        <form className="flex flex-col gap-5" onSubmit={handleSignup}>
+          {/* General error */}
           {error && (
-            <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded">
-              {error}
-            </div>
+            <p className="text-sm text-red-600 mt-1 leading-relaxed">{error}</p>
           )}
-          
-          <div className="rounded-md shadow-sm space-y-4">
-            <div>
-              <label htmlFor="email" className="block text-sm font-medium text-gray-700">
-                Email address
-              </label>
-              <input
-                id="email"
-                name="email"
-                type="email"
-                autoComplete="email"
-                required
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                className="mt-1 appearance-none relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 rounded-md focus:outline-none focus:ring-green-500 focus:border-green-500 focus:z-10 sm:text-sm"
-                placeholder="you@example.com"
-              />
-            </div>
-            
-            <div>
-              <label htmlFor="password" className="block text-sm font-medium text-gray-700">
-                Password
-              </label>
-              <input
-                id="password"
-                name="password"
-                type="password"
-                autoComplete="new-password"
-                required
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                className="mt-1 appearance-none relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 rounded-md focus:outline-none focus:ring-green-500 focus:border-green-500 focus:z-10 sm:text-sm"
-                placeholder="••••••••"
-              />
-            </div>
 
-            <div>
-              <label htmlFor="confirmPassword" className="block text-sm font-medium text-gray-700">
-                Confirm Password
-              </label>
-              <input
-                id="confirmPassword"
-                name="confirmPassword"
-                type="password"
-                autoComplete="new-password"
-                required
-                value={confirmPassword}
-                onChange={(e) => setConfirmPassword(e.target.value)}
-                className="mt-1 appearance-none relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 rounded-md focus:outline-none focus:ring-green-500 focus:border-green-500 focus:z-10 sm:text-sm"
-                placeholder="••••••••"
-              />
-            </div>
-          </div>
-
+          {/* Email */}
           <div>
-            <button
-              type="submit"
-              disabled={loading}
-              className="group relative w-full flex justify-center py-2 px-4 border border-transparent text-sm font-medium rounded-md text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              {loading ? "Creating account..." : "Sign up"}
-            </button>
+            <label htmlFor="email" className="block text-sm font-medium text-black mb-1">
+              Email address
+            </label>
+            <input
+              id="email"
+              name="email"
+              type="email"
+              autoComplete="email"
+              required
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              className="w-full bg-[#f4f4f4] rounded-[14px] h-[50px] px-5 py-3 text-lg text-black placeholder:text-[#a0a09b] focus:ring-2 focus:ring-[#186346] outline-none"
+              placeholder="you@example.com"
+            />
           </div>
 
-          <div className="text-center">
-            <p className="text-sm text-gray-600">
-              Already have an account?{" "}
-              <Link href="/login" className="font-medium text-green-600 hover:text-green-500">
-                Sign in
-              </Link>
-            </p>
+          {/* Password */}
+          <div>
+            <label htmlFor="password" className="block text-sm font-medium text-black mb-1">
+              Password
+            </label>
+            <input
+              id="password"
+              name="password"
+              type="password"
+              autoComplete="new-password"
+              required
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              className="w-full bg-[#f4f4f4] rounded-[14px] h-[50px] px-5 py-3 text-lg text-black placeholder:text-[#a0a09b] focus:ring-2 focus:ring-[#186346] outline-none"
+              placeholder="••••••••"
+            />
+            {passwordError && (
+              <p className="text-sm text-red-600 mt-1 leading-relaxed">{passwordError}</p>
+            )}
           </div>
+
+          {/* Confirm Password */}
+          <div>
+            <label htmlFor="confirmPassword" className="block text-sm font-medium text-black mb-1">
+              Confirm Password
+            </label>
+            <input
+              id="confirmPassword"
+              name="confirmPassword"
+              type="password"
+              autoComplete="new-password"
+              required
+              value={confirmPassword}
+              onChange={(e) => setConfirmPassword(e.target.value)}
+              className="w-full bg-[#f4f4f4] rounded-[14px] h-[50px] px-5 py-3 text-lg text-black placeholder:text-[#a0a09b] focus:ring-2 focus:ring-[#186346] outline-none"
+              placeholder="••••••••"
+            />
+          </div>
+
+          {/* Submit */}
+          <button
+            type="submit"
+            disabled={loading}
+            className="w-full h-[50px] flex items-center justify-center bg-[#186346] text-white text-lg font-semibold rounded-[14px] hover:opacity-90 transition-opacity disabled:bg-[#e5e5e0] disabled:text-[#a0a09b] disabled:cursor-not-allowed"
+          >
+            {loading ? "Creating account..." : "Sign up"}
+          </button>
+
+          <p className="text-sm text-black/50 text-center">
+            Already have an account?{" "}
+            <Link href="/login" className="font-medium text-[#186346] hover:opacity-80">
+              Sign in
+            </Link>
+          </p>
         </form>
 
         {/* Divider */}
         <div className="relative">
           <div className="absolute inset-0 flex items-center">
-            <div className="w-full border-t border-gray-300" />
+            <div className="w-full border-t border-black/10" />
           </div>
           <div className="relative flex justify-center text-sm">
-            <span className="px-2 bg-gray-50 text-gray-500">Or continue with</span>
+            <span className="px-2 bg-[#fdfbf5] text-black/50">Or continue with</span>
           </div>
         </div>
 
@@ -190,7 +217,7 @@ export default function SignupPage() {
         <button
           type="button"
           onClick={handleGoogleLogin}
-          className="w-full flex justify-center items-center gap-3 py-2 px-4 border border-gray-300 rounded-md shadow-sm bg-white text-sm font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500"
+          className="w-full h-[50px] flex items-center justify-center gap-3 bg-[#f4f4f4] rounded-[14px] text-lg font-semibold text-black hover:bg-[#e8e8e8] transition-colors duration-150 cursor-pointer"
         >
           <svg className="w-5 h-5" viewBox="0 0 24 24">
             <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 0 1-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z"/>
