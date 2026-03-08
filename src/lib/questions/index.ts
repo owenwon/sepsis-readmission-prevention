@@ -4,6 +4,12 @@
 // Types
 export * from './types';
 
+// Validation
+export {
+  validateCurrentQuestion,
+  hasAnswerForQuestion,
+} from './validate';
+
 // Onboarding
 export {
   onboardingQuestions,

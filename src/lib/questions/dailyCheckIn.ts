@@ -99,6 +99,7 @@ export const dailyCheckInQuestions: Question[] = [
     caregiverHelpText: "Check the patient's face and lips in good lighting — bluish or grayish color can be a sign their body is not getting enough oxygen.",
     type: 'boolean',
     schemaField: 'discolored_skin',
+    validation: { required: true },
     businessLogic: {
       terminatesSurvey: true,
       terminationMessage: 'CALL 911 IMMEDIATELY - Skin discoloration indicates poor perfusion or hypoxia',
@@ -171,6 +172,7 @@ export const dailyCheckInQuestions: Question[] = [
     caregiverHelpText: 'Answer yes even if the patient only feels hot or cold to the touch — a thermometer is not needed to answer this question.',
     type: 'boolean',
     schemaField: 'fever_chills',
+    validation: { required: true },
     businessLogic: {
       triggersFollowUp: 'temperature_value',
     },
@@ -246,6 +248,7 @@ export const dailyCheckInQuestions: Question[] = [
     caregiverHelpText: 'Answer yes if the patient says their heart feels like it is racing, pounding, or skipping — or if you can visibly see or feel a rapid or irregular pulse.',
     type: 'boolean',
     schemaField: 'heart_racing',
+    validation: { required: true },
     businessLogic: {
       triggersFollowUp: 'heart_rate_value',
     },
@@ -357,6 +360,7 @@ export const dailyCheckInQuestions: Question[] = [
     prerequisites: [
       { field: 'has_recent_uti', operator: '==', value: true, source: 'onboarding' },
     ],
+    validation: { required: true },
   },
 
   // ============================================================================
@@ -378,6 +382,7 @@ export const dailyCheckInQuestions: Question[] = [
       { label: 'No cough', value: 'none' },
     ],
     schemaField: ['has_cough', 'mucus_color_level'],
+    validation: { required: true },
     businessLogic: {
       mapToMultipleFields: true,
       customMapping: (value: number | string) => ({
@@ -405,6 +410,7 @@ export const dailyCheckInQuestions: Question[] = [
       { label: 'No wound present', value: 'none' },
     ],
     schemaField: 'wound_state_level',
+    validation: { required: true },
     businessLogic: {
       mapToMultipleFields: true,
       customMapping: (value: number | string) => ({
@@ -423,6 +429,7 @@ export const dailyCheckInQuestions: Question[] = [
     caregiverText: 'In the last 24 hours, has the patient experienced any nausea, vomiting, or diarrhea?',
     type: 'boolean',
     schemaField: 'nausea_vomiting_diarrhea',
+    validation: { required: true },
   },
 
   // ============================================================================

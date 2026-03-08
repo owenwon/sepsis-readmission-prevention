@@ -3,6 +3,7 @@
 import { useState, useMemo, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { dailyCheckInQuestions } from "@/lib/questions";
+import { validateCurrentQuestion, hasAnswerForQuestion } from "@/lib/questions/validate";
 import { calculateSepsisRisk } from "@/lib/riskCalculator";
 import type { Question } from "@/lib/questions/types";
 import { createClient } from "@/lib/supabase/client";
@@ -68,6 +69,7 @@ export default function CheckInPage() {
   const [finished, setFinished] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
+  const [validationError, setValidationError] = useState<string | null>(null);
   const [riskResult, setRiskResult] = useState<string | null>(null);
   const [emergency, setEmergency] = useState<{ message: string; emergencyMessage?: string } | null>(null);
   const [emergencyDismissed, setEmergencyDismissed] = useState(false);
@@ -167,12 +169,7 @@ export default function CheckInPage() {
     ? (answers[`__ui__${currentQuestion.id}`] ?? answers[currentQuestion.id])
     : undefined;
 
-  const isImplicitlyRequired =
-    currentQuestion?.type === 'boolean' ||
-    currentQuestion?.type === 'single_select' ||
-    currentQuestion?.type === 'scale';
-  const isRequired = currentQuestion?.validation?.required === true || isImplicitlyRequired;
-  const hasAnswer = !isRequired || (currentValue !== undefined && currentValue !== "" && currentValue !== null);
+  const hasAnswer = currentQuestion ? hasAnswerForQuestion(currentQuestion, currentValue) : false;
 
   const progressPct = useMemo(
     () => (totalQuestions > 0 ? (currentIndex / totalQuestions) * 100 : 0),
@@ -229,6 +226,13 @@ export default function CheckInPage() {
       return;
     }
     if (!hasAnswer) return;
+
+    const error = currentQuestion ? validateCurrentQuestion(currentQuestion, currentValue) : null;
+    if (error) {
+      setValidationError(error);
+      return;
+    }
+    setValidationError(null);
     if (currentIndex < totalQuestions - 1) {
       setCurrentIndex(currentIndex + 1);
     } else {
@@ -430,6 +434,9 @@ export default function CheckInPage() {
       </div>
 
       <div className="flex w-full max-w-[430px] flex-col gap-2 pt-6">
+        {validationError && (
+          <p className="text-center text-sm text-red-600">{validationError}</p>
+        )}
         {submitError && (
           <p className="text-center text-sm text-red-600">{submitError}</p>
         )}
