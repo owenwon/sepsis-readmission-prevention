@@ -99,6 +99,7 @@ export const onboardingQuestions: Question[] = [
     prerequisites: [
       { field: 'currently_hospitalized', operator: '==', value: false },
     ],
+    validation: { required: true },
     businessLogic: {
       mapToMultipleFields: true,
       customMapping: (value) => ({
@@ -152,6 +153,7 @@ export const onboardingQuestions: Question[] = [
     helpText: 'Only select conditions that a doctor has told you that you have, do not guess.',
     caregiverHelpText: 'Only select conditions that a doctor has told the patient they have, do not guess.',
     type: 'multi_select',
+    validation: { required: true },
     options: [
       { label: 'Asthma', value: 'asthma' },
       { label: 'Atrial Fibrillation or Irregular Heartbeat', value: 'afib' },
@@ -234,6 +236,7 @@ export const onboardingQuestions: Question[] = [
     helpText: 'Include anything in the past 3 months you were seen by a doctor for or given medicine for, even if you feel better now.',
     caregiverHelpText: 'Include anything in the past 3 months the patient was seen by a doctor for or given medicine for, even if they feel better now.',
     type: 'multi_select',
+    validation: { required: true },
     options: [
       { label: 'Abdominal or Gut Infection (appendicitis, diverticulitis, peritonitis)', value: 'abdominal_infection' },
       { label: 'Acute Kidney Failure', value: 'acute_kidney_failure' },
@@ -585,7 +588,6 @@ export const onboardingQuestions: Question[] = [
       { label: 'Iron (prescribed)', value: 'iron' },
       { label: 'Potassium (prescribed)', value: 'potassium' },
       { label: 'Magnesium (prescribed)', value: 'magnesium' },
-      { label: 'None', value: 'none' },
     ],
     schemaField: [
       'on_immunosuppressants',
@@ -635,6 +637,7 @@ export const onboardingQuestions: Question[] = [
     prerequisites: [
       { field: 'is_patient', operator: '==', value: true },
     ],
+    validation: { required: true },
   },
 
   {
@@ -652,6 +655,7 @@ export const onboardingQuestions: Question[] = [
     prerequisites: [
       { field: 'has_caregiver', operator: '==', value: true },
     ],
+    validation: { required: true },
     businessLogic: {
       mapToMultipleFields: true,
       customMapping: (value: string) => ({
@@ -703,6 +707,7 @@ export const onboardingQuestions: Question[] = [
     prerequisites: [
       { field: 'has_caregiver', operator: '==', value: false },
     ],
+    validation: { required: true },
     businessLogic: {
       mapToMultipleFields: true,
       customMapping: (value: string) => ({
@@ -723,6 +728,7 @@ export const onboardingQuestions: Question[] = [
     helpText: 'Any type of thermometer counts — mouth, ear, forehead, or armpit.',
     type: 'boolean',
     schemaField: 'has_thermometer',
+    validation: { required: true },
   },
 
   {
@@ -734,6 +740,7 @@ export const onboardingQuestions: Question[] = [
     caregiverHelpText: "A pulse oximeter is a small clip placed on the fingertip — it shows the patient's oxygen level as a number like 98%.",
     type: 'boolean',
     schemaField: 'has_pulse_oximeter',
+    validation: { required: true },
   },
 
   {
@@ -744,6 +751,7 @@ export const onboardingQuestions: Question[] = [
     helpText: 'Automatic arm cuffs you can buy at a pharmacy work great — wrist cuffs are less accurate but still count.',
     type: 'boolean',
     schemaField: 'has_bp_cuff',
+    validation: { required: true },
     businessLogic: {
       triggersFollowUp: 'baseline_bp_systolic',
     },
@@ -781,6 +789,7 @@ export const onboardingQuestions: Question[] = [
     caregiverHelpText: "Many pulse oximeters, blood pressure cuffs, and smart watches already show the patient's heart rate — check the device's screen.",
     type: 'boolean',
     schemaField: 'has_hr_monitor',
+    validation: { required: true },
   },
 
 ];

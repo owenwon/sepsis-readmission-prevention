@@ -3,6 +3,7 @@
 import { useState, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { onboardingQuestions } from "@/lib/questions";
+import { validateCurrentQuestion, hasAnswerForQuestion } from "@/lib/questions/validate";
 import type { Question } from "@/lib/questions/types";
 
 // ============================================================================
@@ -31,6 +32,7 @@ export default function OnboardingPage() {
   const [finished, setFinished] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
+  const [validationError, setValidationError] = useState<string | null>(null);
 
   // Determine user mode from first question answer
   const isCaregiver = answers["user_type"] === "caregiver";
@@ -75,8 +77,7 @@ export default function OnboardingPage() {
   const currentQuestion = visibleQuestions[currentIndex];
   const totalQuestions = visibleQuestions.length;
   const currentValue = currentQuestion ? answers[currentQuestion.id] : undefined;
-  const isRequired = currentQuestion?.validation?.required === true;
-  const hasAnswer = !isRequired || (currentValue !== undefined && currentValue !== "" && currentValue !== null);
+  const hasAnswer = currentQuestion ? hasAnswerForQuestion(currentQuestion, currentValue) : false;
 
   const progressPct = useMemo(
     () => (totalQuestions > 0 ? (currentIndex / totalQuestions) * 100 : 0),
@@ -122,6 +123,14 @@ export default function OnboardingPage() {
 
   const handleContinue = async () => {
     if (!hasAnswer) return;
+
+    const error = currentQuestion ? validateCurrentQuestion(currentQuestion, currentValue) : null;
+    if (error) {
+      setValidationError(error);
+      return;
+    }
+    setValidationError(null);
+
     if (currentIndex < totalQuestions - 1) {
       setCurrentIndex(currentIndex + 1);
     } else {
@@ -268,6 +277,9 @@ export default function OnboardingPage() {
 
       {/* ---- Bottom: error + continue button ---- */}
       <div className="flex w-full max-w-[430px] flex-col gap-2 pt-6">
+        {validationError && (
+          <p className="text-center text-sm text-red-600">{validationError}</p>
+        )}
         {submitError && (
           <p className="text-center text-sm text-red-600">{submitError}</p>
         )}
