@@ -15,21 +15,21 @@ const levelConfig: Record<
   }
 > = {
   GREEN: {
-    label: "No Signs\nof Infection",
+    label: "Low Risk",
     gaugeImage: "/images/gauge-green.svg",
     accentColor: "#4cc070",
     cardTitle: "Continue home monitoring",
     cardBody: "Your symptoms look stable. Keep up with your daily check-ins and reach out if anything changes.",
   },
   YELLOW: {
-    label: "Concerning",
+    label: "Medium\nRisk",
     gaugeImage: "/images/gauge-yellow.svg",
     accentColor: "#ffc800",
     cardTitle: "Contact your provider today",
     cardBody: "Some of your symptoms need attention. Call your doctor or nurse today to discuss what you're experiencing.",
   },
   RED: {
-    label: "Urgent",
+    label: "High Risk",
     gaugeImage: "/images/gauge-red.svg",
     accentColor: "#df0d3d",
     cardTitle: "Seek immediate medical attention",
