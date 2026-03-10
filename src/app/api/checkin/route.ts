@@ -105,6 +105,28 @@ export async function POST(req: NextRequest) {
       }
     }
 
+    // Zone consistency guard: each vital value/zone pair must be both NULL or
+    // both non-NULL. Strip any zone that has no corresponding value (and vice
+    // versa) so the DB constraint is never violated by stale nulls leaking
+    // through client-side merges with existing DB rows.
+    const ZONE_PAIRS: [string, string][] = [
+      ['temperature_value',       'temperature_zone'],
+      ['oxygen_level_value',      'oxygen_level_zone'],
+      ['heart_rate_value',        'heart_rate_zone'],
+      ['blood_pressure_systolic', 'blood_pressure_zone'],
+    ];
+    for (const [valueCol, zoneCol] of ZONE_PAIRS) {
+      const hasValue = payload[valueCol] != null;
+      const hasZone  = payload[zoneCol] != null;
+      if (hasValue && !hasZone) {
+        // Value present without zone — should not happen; drop value to be safe
+        delete payload[valueCol];
+      } else if (!hasValue && hasZone) {
+        // Zone present without value — drop the orphaned zone
+        delete payload[zoneCol];
+      }
+    }
+
     // Guard: uti_symptoms_worsening must match the uti_symptoms_type Postgres enum exactly.
     // Any other value (including null or an empty string) would cause a DB type error.
     // We delete the key rather than rejecting the request because this field is

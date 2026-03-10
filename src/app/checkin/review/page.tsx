@@ -490,6 +490,9 @@ export default function ReviewCheckinPage() {
   // ------ fetched data ------
   const [profile, setProfile] = useState<PatientProfile | null>(null);
   const [patientId, setPatientId] = useState<string | null>(null);
+  // Capture the checkin_date at load time so midnight-crossing edits
+  // always target the same DB row instead of creating a duplicate.
+  const [checkinDate, setCheckinDate] = useState<string>(getLocalToday());
 
   // ------ answer state ------
   const [answers, setAnswers] = useState<Record<string, any>>({});
@@ -565,8 +568,10 @@ export default function ReviewCheckinPage() {
           baseline_bp_systolic: patientData.baseline_bp_systolic,
         };
 
-        // Today's check-in
+        // Today's check-in — capture the date used to load so edits
+        // always target the same row even if the user crosses midnight.
         const today = getLocalToday();
+        setCheckinDate(today);
         const { data: checkinData, error: checkinErr } = await supabase
           .from("daily_checkins")
           .select("*")
@@ -689,7 +694,7 @@ export default function ReviewCheckinPage() {
             .from('daily_checkins')
             .select('*')
             .eq('patient_id', patientId)
-            .eq('checkin_date', getLocalToday())
+            .eq('checkin_date', checkinDate)
             .single();
           mergedAnswers = { ...(existingCheckin ?? {}), ...updated };
         }
@@ -698,7 +703,7 @@ export default function ReviewCheckinPage() {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            answers: { ...mergedAnswers, ...riskResult.zones, risk_level: "RED_EMERGENCY", checkin_date: getLocalToday() },
+            answers: { ...mergedAnswers, ...riskResult.zones, risk_level: "RED_EMERGENCY", checkin_date: checkinDate },
           }),
         });
       } catch {
@@ -752,7 +757,7 @@ export default function ReviewCheckinPage() {
           .from('daily_checkins')
           .select('*')
           .eq('patient_id', patientId)
-          .eq('checkin_date', getLocalToday())
+          .eq('checkin_date', checkinDate)
           .single();
         mergedAnswers = { ...(existingCheckin ?? {}), ...answers };
       }
@@ -771,7 +776,7 @@ export default function ReviewCheckinPage() {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            answers: { ...mergedAnswers, ...zones, risk_level: "RED_EMERGENCY", checkin_date: getLocalToday() },
+            answers: { ...mergedAnswers, ...zones, risk_level: "RED_EMERGENCY", checkin_date: checkinDate },
           }),
         });
         setSubmitting(false);
@@ -781,7 +786,7 @@ export default function ReviewCheckinPage() {
       const res = await fetch("/api/checkin", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ answers: { ...mergedAnswers, ...zones, risk_level, checkin_date: getLocalToday() } }),
+        body: JSON.stringify({ answers: { ...mergedAnswers, ...zones, risk_level, checkin_date: checkinDate } }),
       });
 
       if (res.ok) {

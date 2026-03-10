@@ -295,6 +295,15 @@ export default function CheckInPage() {
     setAnswers({});
   };
 
+  const handleBack = () => {
+    if (currentIndex === 0) {
+      router.push('/dashboard');
+    } else {
+      setCurrentIndex(currentIndex - 1);
+      setValidationError(null);
+    }
+  };
+
   useEffect(() => {
     if (emergencyDismissed) {
       const timer = setTimeout(() => router.push('/dashboard'), 2000);
@@ -390,21 +399,6 @@ export default function CheckInPage() {
             Your Results
           </h1>
 
-          {/* Overall feeling summary */}
-          {answers.overall_feeling != null && FEELING_FACES[answers.overall_feeling as keyof typeof FEELING_FACES] && (
-            <div className="flex items-center justify-center gap-3 rounded-[14px] bg-white px-4 py-3 shadow-[0px_2px_8px_rgba(0,0,0,0.08)]">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                src={FEELING_FACES[answers.overall_feeling as keyof typeof FEELING_FACES].activeImg}
-                alt={FEELING_FACES[answers.overall_feeling as keyof typeof FEELING_FACES].label}
-                className="h-10 w-10"
-              />
-              <span className="text-base font-medium" style={{ color: FEELING_FACES[answers.overall_feeling as keyof typeof FEELING_FACES].color }}>
-                Feeling {FEELING_FACES[answers.overall_feeling as keyof typeof FEELING_FACES].label}
-              </span>
-            </div>
-          )}
-
           <RiskGauge
             level={gaugeLevel}
             onDashboard={() => router.push("/dashboard")}
@@ -440,11 +434,15 @@ export default function CheckInPage() {
   return (
     <div className={`${colors.bg} flex min-h-dvh flex-col items-center justify-between px-4 pb-20 pt-2.5`}>
       <div className="flex w-full max-w-[430px] flex-col gap-6">
-        <div className="flex flex-col items-end">
-          <button onClick={handleRestart} className="cursor-pointer rounded-[9px] bg-[#f4f4f4] px-3 py-[7px] text-xs font-medium text-black">
-            Restart chat
-          </button>
-        </div>
+        <button
+          onClick={handleBack}
+          className="flex size-10 cursor-pointer items-center justify-center self-start"
+          aria-label="Go back"
+        >
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+            <path d="M15 18l-6-6 6-6" stroke="black" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+        </button>
 
         <div className="flex w-full flex-col gap-4">
           <div className={`flex w-full items-center rounded-full ${colors.trackBg}`}>
