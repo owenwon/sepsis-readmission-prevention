@@ -1,29 +1,16 @@
 "use client";
 
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { dailyCheckInQuestions } from "@/lib/questions";
 import { validateCurrentQuestion, hasAnswerForQuestion } from "@/lib/questions/validate";
 import { calculateSepsisRisk } from "@/lib/riskCalculator";
+import { getLocalToday, buildSurveyResponse } from "@/lib/localDate";
 import type { Question } from "@/lib/questions/types";
 import { createClient } from "@/lib/supabase/client";
 import RiskGauge from "@/components/RiskGauge";
 import type { GaugeLevel } from "@/components/RiskGauge";
-
-// ============================================================================
-// Pure helper — evaluate a business-logic trigger condition
-// ============================================================================
-function evaluateTrigger(operator: string, triggerValue: any, answer: any): boolean {
-  switch (operator) {
-    case '==':  return answer === triggerValue;
-    case '!=':  return answer !== triggerValue;
-    case '>':   return answer > triggerValue;
-    case '<':   return answer < triggerValue;
-    case '>=':  return answer >= triggerValue;
-    case '<=':  return answer <= triggerValue;
-    default:    return false;
-  }
-}
+import { evaluateTrigger, QuestionInput, OptionButton, FEELING_FACES } from "@/components/CheckInComponents";
 
 // ============================================================================
 // Design tokens from Figma
@@ -45,12 +32,24 @@ const colors = {
 // Onboarding flags gate which vital questions appear; is_caregiver
 // controls which question text variant is shown.
 type PatientProfile = {
+  patient_id: string;
   is_caregiver: boolean;
   has_thermometer: boolean;
   has_pulse_oximeter: boolean;
   has_bp_cuff: boolean;
   has_hr_monitor: boolean;
   has_recent_uti: boolean;
+  birthday?: string;
+  discharge_date?: string;
+  has_weakened_immune?: boolean;
+  admitted_count?: number;
+  on_immunosuppressants?: boolean;
+  has_lung_condition?: boolean;
+  has_heart_failure?: boolean;
+  has_had_septic_shock?: boolean;
+  has_urinary_catheter?: boolean;
+  has_recent_pneumonia?: boolean;
+  baseline_bp_systolic?: number;
 };
 
 // ============================================================================
@@ -73,6 +72,7 @@ export default function CheckInPage() {
   const [riskResult, setRiskResult] = useState<string | null>(null);
   const [emergency, setEmergency] = useState<{ message: string; emergencyMessage?: string } | null>(null);
   const [emergencyDismissed, setEmergencyDismissed] = useState(false);
+  const emergencySubmittedRef = useRef(false);
 
   // ------------------------------------------------------------------
   // Fetch patient profile once on mount so we know is_caregiver and
@@ -93,7 +93,7 @@ export default function CheckInPage() {
         const { data, error } = await supabase
           .from("patients")
           .select(
-            "is_caregiver, has_thermometer, has_pulse_oximeter, has_bp_cuff, has_hr_monitor, has_recent_uti"
+            "patient_id, is_caregiver, has_thermometer, has_pulse_oximeter, has_bp_cuff, has_hr_monitor, has_recent_uti, birthday, discharge_date, has_weakened_immune, admitted_count, on_immunosuppressants, has_lung_condition, has_heart_failure, has_had_septic_shock, has_urinary_catheter, has_recent_pneumonia, baseline_bp_systolic"
           )
           .eq("user_id", user.id)
           .single();
@@ -101,6 +101,20 @@ export default function CheckInPage() {
         if (error || !data) {
           setProfileError("Could not load your profile. Please complete onboarding first.");
           setProfileLoading(false);
+          return;
+        }
+
+        // Check if a check-in already exists for today
+        const today = getLocalToday();
+        const { data: existingCheckin } = await supabase
+          .from('daily_checkins')
+          .select('daily_checkin_id')
+          .eq('patient_id', data.patient_id)
+          .eq('checkin_date', today)
+          .maybeSingle();
+
+        if (existingCheckin) {
+          router.replace('/checkin/review');
           return;
         }
 
@@ -198,12 +212,12 @@ export default function CheckInPage() {
 
   const submitPartialCheckin = async () => {
     try {
-      const riskCalcResult = calculateSepsisRisk(answers as any);
+      const riskCalcResult = calculateSepsisRisk(buildSurveyResponse(answers, profile!) as any);
       const { zones } = riskCalcResult;
       await fetch("/api/checkin", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ answers: { ...answers, ...zones, risk_level: 'RED_EMERGENCY' } })
+        body: JSON.stringify({ answers: { ...answers, ...zones, risk_level: 'RED_EMERGENCY', checkin_date: getLocalToday() } })
       });
     } catch {
       // Silently ignore — the emergency UI is already showing.
@@ -236,7 +250,7 @@ export default function CheckInPage() {
     if (currentIndex < totalQuestions - 1) {
       setCurrentIndex(currentIndex + 1);
     } else {
-      const riskCalcResult = calculateSepsisRisk(answers as any);
+      const riskCalcResult = calculateSepsisRisk(buildSurveyResponse(answers, profile!) as any);
       const risk_level = riskCalcResult.riskLevel;
       const { zones } = riskCalcResult;
 
@@ -245,7 +259,10 @@ export default function CheckInPage() {
           message: 'Your responses indicate a high-risk situation.',
           emergencyMessage: riskCalcResult.emergencyMessage,
         });
-        await submitPartialCheckin();
+        if (!emergencySubmittedRef.current) {
+          emergencySubmittedRef.current = true;
+          await submitPartialCheckin();
+        }
         return;
       }
 
@@ -255,7 +272,7 @@ export default function CheckInPage() {
         const res = await fetch("/api/checkin", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ answers: { ...answers, ...zones, risk_level } })
+          body: JSON.stringify({ answers: { ...answers, ...zones, risk_level, checkin_date: getLocalToday() } })
         });
         if (res.ok) {
           setRiskResult(risk_level);
@@ -323,7 +340,10 @@ export default function CheckInPage() {
         )}
         <button
           onClick={async () => {
-            await submitPartialCheckin();
+            if (!emergencySubmittedRef.current) {
+              emergencySubmittedRef.current = true;
+              await submitPartialCheckin();
+            }
             setEmergencyDismissed(true);
           }}
           className="mt-10 flex h-[54px] w-full max-w-[380px] cursor-pointer items-center justify-center rounded-[14px] bg-white px-6 text-lg font-semibold text-red-700"
@@ -369,6 +389,21 @@ export default function CheckInPage() {
           <h1 className="w-full text-center text-[26px] font-semibold text-black">
             Your Results
           </h1>
+
+          {/* Overall feeling summary */}
+          {answers.overall_feeling != null && FEELING_FACES[answers.overall_feeling as keyof typeof FEELING_FACES] && (
+            <div className="flex items-center justify-center gap-3 rounded-[14px] bg-white px-4 py-3 shadow-[0px_2px_8px_rgba(0,0,0,0.08)]">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={FEELING_FACES[answers.overall_feeling as keyof typeof FEELING_FACES].activeImg}
+                alt={FEELING_FACES[answers.overall_feeling as keyof typeof FEELING_FACES].label}
+                className="h-10 w-10"
+              />
+              <span className="text-base font-medium" style={{ color: FEELING_FACES[answers.overall_feeling as keyof typeof FEELING_FACES].color }}>
+                Feeling {FEELING_FACES[answers.overall_feeling as keyof typeof FEELING_FACES].label}
+              </span>
+            </div>
+          )}
 
           <RiskGauge
             level={gaugeLevel}
@@ -456,112 +491,3 @@ export default function CheckInPage() {
   );
 }
 
-// ============================================================================
-// Shared option-button component
-// ============================================================================
-function OptionButton({
-  label, selected, onClick, emoji,
-}: {
-  label: string; selected: boolean; onClick: () => void; emoji?: string; description?: string;
-}) {
-  return (
-    <button
-      onClick={onClick}
-      className={`flex w-full cursor-pointer items-center justify-center rounded-[14px] transition-colors duration-150 ${selected ? "bg-[#dcf5f0]" : "bg-[#f4f4f4]"}`}
-    >
-      <div className={`flex min-h-[50px] flex-1 items-center justify-center rounded-[14px] px-[19px] py-[13px] ${selected ? "border border-solid border-[#186346]" : ""}`}>
-        <span className="text-center text-lg leading-snug text-black">
-          {emoji && <span className="mr-2">{emoji}</span>}
-          {label}
-        </span>
-      </div>
-    </button>
-  );
-}
-
-// ============================================================================
-// Question input renderer
-// ============================================================================
-function QuestionInput({ question, value, onChange }: { question: Question; value: any; onChange: (value: any) => void; }) {
-  switch (question.type) {
-    case "boolean":
-      return (
-        <div className="flex w-full flex-col gap-4">
-          <OptionButton label="Yes" selected={value === true} onClick={() => onChange(true)} />
-          <OptionButton label="No" selected={value === false} onClick={() => onChange(false)} />
-        </div>
-      );
-    case "single_select":
-      return (
-        <div className="flex w-full flex-col gap-4">
-          {question.options?.map((option) => (
-            <OptionButton key={String(option.value)} label={option.label} emoji={option.iconEmoji} description={option.description} selected={value === option.value} onClick={() => onChange(option.value)} />
-          ))}
-        </div>
-      );
-    case "multi_select": {
-      const selected: any[] = Array.isArray(value) ? value : [];
-      return (
-        <div className="flex w-full flex-col gap-4">
-          {question.options?.map((option) => {
-            const isChecked = selected.includes(option.value);
-            return (
-              <OptionButton
-                key={String(option.value)}
-                label={`${option.iconEmoji ? option.iconEmoji + " " : ""}${option.label}`}
-                selected={isChecked}
-                onClick={() => {
-                  if (option.value === "none") { onChange(isChecked ? [] : ["none"]); }
-                  else {
-                    const withoutNone = selected.filter((v) => v !== "none");
-                    onChange(isChecked ? withoutNone.filter((v) => v !== option.value) : [...withoutNone, option.value]);
-                  }
-                }}
-              />
-            );
-          })}
-        </div>
-      );
-    }
-    case "text":
-      return <input type="text" value={value || ""} onChange={(e) => onChange(e.target.value)} placeholder={question.placeholder} className="h-[50px] w-full rounded-[14px] bg-[#f4f4f4] px-5 py-3 text-lg text-black outline-none placeholder:text-[#a0a09b] focus:ring-2 focus:ring-[#186346]" />;
-    case "textarea":
-      return <textarea value={value || ""} onChange={(e) => onChange(e.target.value)} placeholder={question.placeholder} rows={4} className="w-full rounded-[14px] bg-[#f4f4f4] px-5 py-4 text-lg text-black outline-none placeholder:text-[#a0a09b] focus:ring-2 focus:ring-[#186346]" />;
-    case "integer":
-      return (
-        <div className="flex w-full items-center gap-3">
-          <input type="number" inputMode="numeric" value={value ?? ""} onChange={(e) => onChange(e.target.value === "" ? undefined : parseInt(e.target.value))} placeholder={question.placeholder} min={question.validation?.min} max={question.validation?.max} step={1} className="h-[50px] flex-1 rounded-[14px] bg-[#f4f4f4] px-5 py-3 text-lg text-black outline-none placeholder:text-[#a0a09b] focus:ring-2 focus:ring-[#186346]" />
-          {question.unit && <span className="shrink-0 text-base font-medium text-black/60">{question.unit}</span>}
-        </div>
-      );
-    case "float":
-      return (
-        <div className="flex w-full items-center gap-3">
-          <input type="number" inputMode="decimal" value={value ?? ""} onChange={(e) => onChange(e.target.value === "" ? undefined : parseFloat(e.target.value))} placeholder={question.placeholder} min={question.validation?.min} max={question.validation?.max} step={0.1} className="h-[50px] flex-1 rounded-[14px] bg-[#f4f4f4] px-5 py-3 text-lg text-black outline-none placeholder:text-[#a0a09b] focus:ring-2 focus:ring-[#186346]" />
-          {question.unit && <span className="shrink-0 text-base font-medium text-black/60">{question.unit}</span>}
-        </div>
-      );
-    case "scale": {
-      const min = question.validation?.min ?? 0;
-      const max = question.validation?.max ?? 10;
-      const steps = Array.from({ length: max - min + 1 }, (_, i) => min + i);
-      return (
-        <div className="flex w-full flex-col gap-3">
-          <div className="flex w-full flex-wrap justify-center gap-2">
-            {steps.map((step) => (
-              <button key={step} onClick={() => onChange(step)} className={`flex h-12 w-12 cursor-pointer items-center justify-center rounded-full text-lg font-medium transition-colors duration-150 ${value === step ? "border border-solid border-[#186346] bg-[#dcf5f0] text-black" : "bg-[#f4f4f4] text-black"}`}>
-                {step}
-              </button>
-            ))}
-          </div>
-          <div className="flex justify-between px-1 text-xs text-black/40">
-            <span>{min}</span>
-            <span>{max}</span>
-          </div>
-        </div>
-      );
-    }
-    default:
-      return <p className="text-sm text-[#a0a09b]">Unsupported question type: {question.type}</p>;
-  }
-}

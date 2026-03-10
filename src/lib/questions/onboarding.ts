@@ -93,7 +93,7 @@ export const onboardingQuestions: Question[] = [
       { label: '1–3 months ago', value: 60 },
       { label: 'More than 3 months ago', value: 120 },
     ],
-    schemaField: ['days_since_last_discharge', 'sepsis_status'],
+    schemaField: ['discharge_date', 'sepsis_status'],
     helpText: 'Pick the date you were released from the hospital, not when you first got sick.',
     caregiverHelpText: 'Pick the date the patient was released from the hospital, not when they first got sick.',
     prerequisites: [
@@ -102,8 +102,10 @@ export const onboardingQuestions: Question[] = [
     validation: { required: true },
     businessLogic: {
       mapToMultipleFields: true,
-      customMapping: (value) => ({
-        days_since_last_discharge: value,
+      customMapping: (value: number) => ({
+        discharge_date: new Date(Date.now() - value * 86_400_000)
+          .toISOString()
+          .split('T')[0],
         sepsis_status: value <= 90 ? 'recently_discharged' : 'other',
       }),
     },

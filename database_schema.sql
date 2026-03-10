@@ -64,12 +64,19 @@ CREATE TABLE patients (
 
     -- =========================================================================
     -- SEPSIS CONTEXT
-    -- Maps to onboarding.ts: currently_hospitalized, days_since_last_discharge,
+    -- Maps to onboarding.ts: currently_hospitalized, discharge_date (derived from
+    --   days_since_last_discharge bucketed range during onboarding),
     --   admitted_count (SurveyResponse.admitted_count used by isHighRiskPatient: > 1)
+    --
+    --   discharge_date — Approximate date of last sepsis-related hospital discharge.
+    --                    Derived from a bucketed range selected during onboarding
+    --                    (not an exact date). Used to compute days since discharge
+    --                    at runtime as CURRENT_DATE - discharge_date.
+    --                    Never store a computed delta — always derive it fresh each day.
     -- =========================================================================
     currently_hospitalized BOOLEAN DEFAULT false,
     sepsis_status sepsis_status_type,
-    days_since_last_discharge INTEGER,
+    discharge_date DATE,
     admitted_count INTEGER DEFAULT 0,
 
     -- =========================================================================
@@ -200,9 +207,6 @@ CREATE TABLE patients (
         (is_patient = false AND is_caregiver = true)
     ),
     CONSTRAINT valid_admitted_count CHECK (admitted_count >= 0),
-    CONSTRAINT valid_days_since_discharge CHECK (
-        days_since_last_discharge IS NULL OR days_since_last_discharge >= 0
-    ),
     CONSTRAINT valid_baseline_bp CHECK (
         baseline_bp_systolic IS NULL OR
         (baseline_bp_systolic >= 60 AND baseline_bp_systolic <= 250)
@@ -255,7 +259,7 @@ CREATE TABLE daily_checkins (
     -- =========================================================================
     overall_feeling INTEGER CHECK (overall_feeling IS NULL OR overall_feeling BETWEEN 1 AND 5),
     energy_level INTEGER CHECK (energy_level IS NULL OR energy_level BETWEEN 1 AND 3),
-    pain_level INTEGER CHECK (pain_level IS NULL OR pain_level BETWEEN 0 AND 10),
+    pain_level INTEGER CHECK (pain_level IS NULL OR pain_level BETWEEN 1 AND 10),
 
     -- =========================================================================
     -- VITALS — TEMPERATURE
@@ -703,6 +707,8 @@ COMMENT ON COLUMN patients.has_urinary_catheter IS 'True if patient currently ha
 COMMENT ON COLUMN patients.on_immunosuppressants IS 'True if patient takes any immunosuppressant, biologic, chemotherapy, or corticosteroid. Used by isHighRiskPatient() → 25% score multiplier.';
 COMMENT ON COLUMN patients.is_high_risk IS 'Auto-calculated by trigger on INSERT/UPDATE. Mirrors isHighRiskPatient() in riskCalculator.ts: age >= 65 OR has_weakened_immune OR admitted_count > 1 OR on_immunosuppressants.';
 COMMENT ON COLUMN patients.baseline_bp_systolic IS 'Baseline systolic BP from onboarding. Used by calculateZones() for blood pressure zone calculation. Defaults to 120 in riskCalculator if NULL.';
+COMMENT ON COLUMN patients.discharge_date IS 'Approximate date of last sepsis-related hospital discharge. Derived from a bucketed range selected during onboarding (not an exact date). Used to compute days since discharge at runtime as CURRENT_DATE - discharge_date. Replaces the old days_since_last_discharge integer. Never store a computed delta — always derive it fresh each day.';
+
 
 COMMENT ON COLUMN daily_checkins.risk_level IS 'Final risk level from calculateSepsisRisk() in riskCalculator.ts. One of: GREEN, YELLOW, RED, RED_EMERGENCY. All scoring runs client-side before insert.';
 COMMENT ON COLUMN daily_checkins.thinking_level IS 'NULL when survey terminated before question 3 was reached (e.g. fainted_or_very_dizzy triggered at question 1). 1=clear, 2=slow/foggy (+8), 3=confused (→ RED_EMERGENCY).';
@@ -743,7 +749,7 @@ INSERT INTO patients (
     birthday,
     currently_hospitalized,
     sepsis_status,
-    days_since_last_discharge,
+    discharge_date,
     admitted_count,
     has_weakened_immune,
     has_lung_condition,
@@ -772,7 +778,7 @@ INSERT INTO patients (
     '1950-06-15',
     false,
     'recently_discharged',
-    14,
+    CURRENT_DATE - INTERVAL '14 days',
     1,
     false,
     true,   -- has COPD

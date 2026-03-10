@@ -8,7 +8,7 @@ const ALLOWED_COLUMNS = [
   "birthday",
   "currently_hospitalized",
   "sepsis_status",
-  "days_since_last_discharge",
+  "discharge_date",
   "admitted_count",
   "has_weakened_immune",
   "has_lung_condition",
@@ -57,6 +57,18 @@ export async function POST(req: NextRequest) {
       if (body[col] !== undefined) {
         payload[col] = body[col];
       }
+    }
+
+    // Derive sepsis_status from discharge_date (server-side safeguard).
+    // Do not override 'readmitted' — that status is set elsewhere (admitted_count logic).
+    const daysSince = payload.discharge_date
+      ? Math.floor(
+          (Date.now() - new Date(payload.discharge_date).getTime()) / 86_400_000
+        )
+      : null;
+
+    if (daysSince !== null && payload.sepsis_status !== 'readmitted') {
+      payload.sepsis_status = daysSince <= 90 ? 'recently_discharged' : 'other';
     }
 
     // Enum allowlist guards — each set matches the CREATE TYPE definition in database_schema.sql.

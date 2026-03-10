@@ -49,10 +49,10 @@ export async function POST(req: NextRequest) {
     const body = await req.json();
     const answers: Record<string, any> = body.answers ?? {};
 
-    // 3. Look up patient_id for this user
+    // 3. Look up patient_id and discharge_date for this user
     const { data: patient, error: patientError } = await supabase
       .from("patients")
-      .select("patient_id")
+      .select("patient_id, discharge_date")
       .eq("user_id", user.id)
       .single();
 
@@ -62,6 +62,16 @@ export async function POST(req: NextRequest) {
         { status: 404 }
       );
     }
+
+    // Compute days_since_last_discharge from the stored discharge_date so it
+    // reflects the true elapsed days at the moment this route runs.
+    // Used transiently for risk scoring (SurveyResponse.days_since_last_discharge)
+    // — never written to the daily_checkins table.
+    const daysSinceLastDischarge = patient.discharge_date
+      ? Math.floor(
+          (Date.now() - new Date(patient.discharge_date).getTime()) / 86_400_000
+        )
+      : undefined;
 
     // 4. Validate risk_level
     const riskLevel = answers.risk_level;
@@ -78,7 +88,15 @@ export async function POST(req: NextRequest) {
     // 5. Pick only allowed columns
     const payload: Record<string, any> = {
       patient_id: patient.patient_id,
-      checkin_date: new Date().toISOString().split("T")[0],
+      checkin_date: (() => {
+        // Prefer client-supplied date so the check-in is filed under the
+        // patient's local calendar day, not the server's UTC date.
+        const clientDate = answers.checkin_date;
+        if (typeof clientDate === "string" && /^\d{4}-\d{2}-\d{2}$/.test(clientDate)) {
+          return clientDate;
+        }
+        return new Date().toISOString().split("T")[0]; // Fallback: server UTC
+      })(),
     };
 
     for (const col of ALLOWED_COLUMNS) {
@@ -105,7 +123,7 @@ export async function POST(req: NextRequest) {
     const NUMERIC_RANGES: Record<string, [number, number]> = {
       overall_feeling:         [1,    5  ],  // CHECK (overall_feeling BETWEEN 1 AND 5)
       energy_level:            [1,    3  ],  // CHECK (energy_level BETWEEN 1 AND 3)
-      pain_level:              [0,    10 ],  // CHECK (pain_level BETWEEN 0 AND 10)
+      pain_level:              [1,    10 ],  // CHECK (pain_level BETWEEN 1 AND 10)
       thinking_level:          [1,    3  ],  // CHECK (thinking_level BETWEEN 1 AND 3)
       breathing_level:         [1,    3  ],  // CHECK (breathing_level BETWEEN 1 AND 3)
       temperature_value:       [90.0, 110.0],// CHECK (temperature_value >= 90 AND <= 110)

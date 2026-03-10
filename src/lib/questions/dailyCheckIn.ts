@@ -146,15 +146,15 @@ export const dailyCheckInQuestions: Question[] = [
   {
     id: 'pain_level',
     section: 'Energy & Well-Being',
-    patientText: 'Rate your pain on a scale of 0 to 10, where 0 is no pain and 10 is the worst pain imaginable.',
-    caregiverText: "Rate the patient's pain on a scale of 0 to 10, where 0 is no pain and 10 is the worst pain imaginable.",
+    patientText: 'Rate your pain on a scale of 1 to 10, where 1 is no pain and 10 is the worst pain imaginable.',
+    caregiverText: "Rate the patient's pain on a scale of 1 to 10, where 1 is no pain and 10 is the worst pain imaginable.",
     helpText: 'Think about any pain anywhere in your body, including headaches, chest pain, belly pain, or pain at a wound site.',
     caregiverHelpText: 'Think about any pain anywhere in the patient\'s body — look for signs like wincing, guarding, or verbal reports of headaches, chest pain, belly pain, or wound pain.',
     type: 'scale',
     schemaField: 'pain_level',
     validation: {
       required: true,
-      min: 0,
+      min: 1,
       max: 10,
     },
   },
