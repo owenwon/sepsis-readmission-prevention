@@ -111,7 +111,9 @@ function calculateZones(response: SurveyResponse): ComputedZones {
   const zones: ComputedZones = {};
 
   // Temperature zones
-  if (response.temperature_value !== undefined) {
+  // Use != null to guard against both null and undefined — DB rows merged
+  // into answers carry null for unmeasured vitals, which must stay null.
+  if (response.temperature_value != null) {
     const temp = response.temperature_value;
     if (temp >= 96.8 && temp <= 99.9) {
       zones.temperature_zone = 1;
@@ -123,7 +125,7 @@ function calculateZones(response: SurveyResponse): ComputedZones {
   }
 
   // Oxygen zones
-  if (response.oxygen_level_value !== undefined) {
+  if (response.oxygen_level_value != null) {
     const o2 = response.oxygen_level_value;
     if (o2 >= 95 && o2 <= 100) {
       zones.oxygen_level_zone = 1;
@@ -135,7 +137,7 @@ function calculateZones(response: SurveyResponse): ComputedZones {
   }
 
   // Heart rate zones
-  if (response.heart_rate_value !== undefined) {
+  if (response.heart_rate_value != null) {
     const hr = response.heart_rate_value;
     if (hr >= 60 && hr <= 100) {
       zones.heart_rate_zone = 1;
@@ -148,7 +150,7 @@ function calculateZones(response: SurveyResponse): ComputedZones {
 
   // Blood pressure zones
   // Focus on LOW BP (hypotension) as the primary sepsis concern
-  if (response.blood_pressure_systolic !== undefined) {
+  if (response.blood_pressure_systolic != null) {
     const bp = response.blood_pressure_systolic;
     const baseline = response.baseline_bp_systolic || 120;
 

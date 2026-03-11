@@ -3,6 +3,12 @@ import { redirect } from "next/navigation";
 import Link from "next/link";
 import Image from "next/image";
 import type { RiskLevel } from "@/types/database";
+import { getLocalToday } from "@/lib/localDate";
+
+// Always re-render on every request so the dashboard reflects the latest
+// risk_level written by the review/check-in pages.
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
 
 
 // Time-based greeting
@@ -111,14 +117,15 @@ export default async function DashboardPage() {
     );
   }
 
-  // fetch latest check-in
+  // fetch today's check-in (one per calendar day)
+  const today = getLocalToday();
+
   const { data: latestCheckin } = await supabase
     .from("daily_checkins")
     .select("risk_level, checkin_date")
     .eq("patient_id", patient.patient_id)
-    .order("created_at", { ascending: false })
-    .limit(1)
-    .single();
+    .eq("checkin_date", today)
+    .maybeSingle();
 
   const hasCheckin = !!latestCheckin;
   const riskLevel: RiskLevel = (latestCheckin?.risk_level as RiskLevel) ?? "GREEN";
@@ -190,7 +197,7 @@ export default async function DashboardPage() {
               />
             </div>
             <Link
-              href="/checkin"
+              href="/checkin/review"
               className="flex h-[50px] w-full items-center justify-center rounded-[14px] bg-[#186346] text-lg font-semibold text-white hover:opacity-90 transition-opacity"
             >
               Review my answers
