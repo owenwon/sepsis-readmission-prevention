@@ -1,13 +1,13 @@
 "use client";
 
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { dailyCheckInQuestions } from "@/lib/questions";
 import { calculateSepsisRisk } from "@/lib/riskCalculator";
 import type { RiskCalculationResult } from "@/lib/riskCalculator";
 import type { Question } from "@/lib/questions/types";
 import { createClient } from "@/lib/supabase/client";
-import { evaluateTrigger, QuestionInput } from "@/components/CheckInComponents";
+import { evaluateTrigger, QuestionInput, FEELING_FACES } from "@/components/CheckInComponents";
 import { getLocalToday, buildSurveyResponse } from "@/lib/localDate";
 
 // ============================================================================
@@ -22,18 +22,6 @@ const colors = {
   disabledText: "#a0a09b",
   divider: "rgba(0,0,0,0.2)",
   overlay: "rgba(0,0,0,0.4)",
-};
-
-// ============================================================================
-// Overall feeling config (smiley face selector)
-// ============================================================================
-
-const FEELING_CONFIG: Record<number, { label: string; emoji: string; color: string }> = {
-  5: { label: "Super", emoji: "😄", color: "#4cbe71" },
-  4: { label: "Good", emoji: "🙂", color: "#a7cf5c" },
-  3: { label: "Okay", emoji: "😐", color: "#ffde45" },
-  2: { label: "Bad", emoji: "😟", color: "#ef8f39" },
-  1: { label: "Awful", emoji: "😢", color: "#f2333a" },
 };
 
 // ============================================================================
@@ -217,6 +205,15 @@ function applyAnswer(
 }
 
 /** Remove all answer keys related to a question (prerequisite-gated cleanup). */
+/** Strip DB-only metadata so stale values (especially risk_level) never leak into payloads. */
+const DB_METADATA_KEYS = ['risk_level', 'daily_checkin_id', 'created_at', 'updated_at', 'patient_id', 'checkin_date'] as const;
+function stripDbMetadata(row: Record<string, any>): Record<string, any> {
+  const cleaned = { ...row };
+  for (const key of DB_METADATA_KEYS) delete cleaned[key];
+  return cleaned;
+}
+
+/** Remove all answer keys related to a question (prerequisite-gated cleanup). */
 function clearQuestionAnswer(answers: Record<string, any>, question: Question) {
   delete answers[question.id];
   delete answers[`__ui__${question.id}`];
@@ -253,8 +250,8 @@ function getDisplayText(question: Question, value: any): string {
 
     case "scale": {
       if (question.id === "overall_feeling") {
-        const c = FEELING_CONFIG[value as number];
-        return c ? `${c.emoji} ${c.label}` : String(value);
+        const c = FEELING_FACES[value as keyof typeof FEELING_FACES];
+        return c ? c.label : String(value);
       }
       if (question.id === "pain_level") return `${value}/10`;
       return String(value);
@@ -502,6 +499,9 @@ export default function ReviewCheckinPage() {
   // ------ risk state ------
   const [currentRisk, setCurrentRisk] = useState<RiskCalculationResult | null>(null);
 
+  // ------ cached DB row (avoids re-fetching on every edit) ------
+  const cachedCheckinRef = useRef<Record<string, any> | null>(null);
+
   // ------ UI state ------
   const [editingQuestion, setEditingQuestion] = useState<Question | null>(null);
   const [showUnsavedDialog, setShowUnsavedDialog] = useState(false);
@@ -584,6 +584,9 @@ export default function ReviewCheckinPage() {
           setLoading(false);
           return;
         }
+
+        // Cache the raw DB row for later merges (handleEditSave / handleSubmit)
+        cachedCheckinRef.current = checkinData;
 
         // Hydrate local answers from DB record
         const hydrated = hydrateAnswersFromDb(checkinData, prof);
@@ -686,18 +689,12 @@ export default function ReviewCheckinPage() {
           "Seek emergency care immediately.",
       });
 
-      // Submit emergency check-in — merge with existing DB row to preserve fields
+      // Submit emergency check-in — merge with cached DB row to preserve fields
       try {
-        let mergedAnswers = updated;
-        if (patientId) {
-          const { data: existingCheckin } = await supabase
-            .from('daily_checkins')
-            .select('*')
-            .eq('patient_id', patientId)
-            .eq('checkin_date', checkinDate)
-            .single();
-          mergedAnswers = { ...(existingCheckin ?? {}), ...updated };
-        }
+        const cachedRow = cachedCheckinRef.current;
+        const mergedAnswers = cachedRow
+          ? { ...stripDbMetadata(cachedRow), ...updated }
+          : updated;
         const riskResult = calculateSepsisRisk(buildSurveyResponse(mergedAnswers, profile!) as any);
         await fetch("/api/checkin", {
           method: "POST",
@@ -724,8 +721,20 @@ export default function ReviewCheckinPage() {
       }
     }
 
-    // 4. Save answer locally — risk recalculation is deferred to "Confirm and Submit"
+    // 4. Save answer locally and recalculate risk immediately
     setAnswers(updated);
+
+    // Merge the cached DB row under local answers so that vital fields the
+    // user hasn't touched (temperature_value, oxygen_level_value, etc.) are
+    // included in the risk calculation — same merge strategy as handleSubmit.
+    // Strip DB metadata (risk_level, daily_checkin_id, etc.) so stale values
+    // never leak into the recalculation.
+    const cachedRow = cachedCheckinRef.current;
+    const answersForRisk = cachedRow
+      ? { ...stripDbMetadata(cachedRow), ...updated }
+      : updated;
+    const newRisk = calculateSepsisRisk(buildSurveyResponse(answersForRisk, profile) as any);
+    setCurrentRisk(newRisk);
 
     // Track "edited" indicator — only if value genuinely differs from original
     const originalVal = originalAnswers[`__ui__${editingQuestion.id}`];
@@ -750,17 +759,13 @@ export default function ReviewCheckinPage() {
     setSubmitError(null);
 
     try {
-      // Merge local answers on top of existing DB row to preserve any fields not edited locally
-      let mergedAnswers = answers;
-      if (patientId) {
-        const { data: existingCheckin } = await supabase
-          .from('daily_checkins')
-          .select('*')
-          .eq('patient_id', patientId)
-          .eq('checkin_date', checkinDate)
-          .single();
-        mergedAnswers = { ...(existingCheckin ?? {}), ...answers };
-      }
+      // Merge local answers on top of cached DB row to preserve any fields not edited locally.
+      // Strip DB metadata (risk_level, daily_checkin_id, etc.) so the freshly calculated
+      // risk_level is always the one submitted — never a stale value from the old row.
+      const cachedRow = cachedCheckinRef.current;
+      const mergedAnswers = cachedRow
+        ? { ...stripDbMetadata(cachedRow), ...answers }
+        : answers;
 
       const riskResult = calculateSepsisRisk(buildSurveyResponse(mergedAnswers, profile!) as any);
       const { zones } = riskResult;
@@ -790,6 +795,17 @@ export default function ReviewCheckinPage() {
       });
 
       if (res.ok) {
+        // Refresh the cached DB row so future edits merge against the latest data
+        if (patientId) {
+          const { data: freshRow } = await supabase
+            .from('daily_checkins')
+            .select('*')
+            .eq('patient_id', patientId)
+            .eq('checkin_date', checkinDate)
+            .maybeSingle();
+          if (freshRow) cachedCheckinRef.current = freshRow;
+        }
+
         // Snapshot becomes the new baseline — button re-disables
         setOriginalAnswers({ ...answers });
         setEditedFields(new Set());
@@ -1007,6 +1023,15 @@ export default function ReviewCheckinPage() {
                         <span className="text-[#186346]">
                           <PencilIcon size={14} />
                         </span>
+                      )}
+                      {question.id === "overall_feeling" && uiValue != null && FEELING_FACES[uiValue as keyof typeof FEELING_FACES] && (
+                        /* eslint-disable-next-line @next/next/no-img-element */
+                        <img
+                          src={FEELING_FACES[uiValue as keyof typeof FEELING_FACES].activeImg}
+                          alt=""
+                          className="h-6 w-6 shrink-0"
+                          draggable={false}
+                        />
                       )}
                       <p
                         className={`text-[18px] leading-snug ${

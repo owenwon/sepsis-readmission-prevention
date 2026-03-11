@@ -5,6 +5,11 @@ import Image from "next/image";
 import type { RiskLevel } from "@/types/database";
 import { getLocalToday } from "@/lib/localDate";
 
+// Always re-render on every request so the dashboard reflects the latest
+// risk_level written by the review/check-in pages.
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+
 
 // Time-based greeting
 function getGreeting(): string {
