@@ -8,7 +8,9 @@ import { calculateSepsisRisk } from "@/lib/riskCalculator";
 import { getLocalToday, buildSurveyResponse } from "@/lib/localDate";
 import type { Question } from "@/lib/questions/types";
 import { createClient } from "@/lib/supabase/client";
+import { useCaregiver } from "@/lib/CaregiverContext";
 import RiskGauge from "@/components/RiskGauge";
+import HelpTooltip from "@/components/HelpTooltip";
 import type { GaugeLevel } from "@/components/RiskGauge";
 import { evaluateTrigger, QuestionInput, OptionButton, FEELING_FACES } from "@/components/CheckInComponents";
 
@@ -129,7 +131,13 @@ export default function CheckInPage() {
     fetchProfile();
   }, []);
 
+  const { setIsCaregiver } = useCaregiver();
   const isCaregiver = profile?.is_caregiver ?? false;
+
+  // Sync caregiver context on profile load
+  useEffect(() => {
+    if (profile) setIsCaregiver(profile.is_caregiver ?? false);
+  }, [profile, setIsCaregiver]);
 
   // ------------------------------------------------------------------
   // Filter questions based on prerequisites.
@@ -214,10 +222,11 @@ export default function CheckInPage() {
     try {
       const riskCalcResult = calculateSepsisRisk(buildSurveyResponse(answers, profile!) as any);
       const { zones } = riskCalcResult;
+      const payload = { ...answers, ...zones, risk_level: 'RED_EMERGENCY', checkin_date: getLocalToday() };
       await fetch("/api/checkin", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ answers: { ...answers, ...zones, risk_level: 'RED_EMERGENCY', checkin_date: getLocalToday() } })
+        body: JSON.stringify({ answers: payload })
       });
     } catch {
       // Silently ignore — the emergency UI is already showing.
@@ -426,10 +435,6 @@ export default function CheckInPage() {
     ? (currentQuestion.caregiverText ?? currentQuestion.patientText)
     : currentQuestion.patientText;
 
-  const helpText = isCaregiver
-    ? (currentQuestion.caregiverHelpText ?? currentQuestion.helpText)
-    : currentQuestion.helpText;
-
   // ----- Main question screen -----
   return (
     <div className={`${colors.bg} flex min-h-dvh flex-col items-center justify-between px-4 pb-20 pt-2.5`}>
@@ -451,12 +456,14 @@ export default function CheckInPage() {
               style={{ width: `${progressPct}%` }}
             />
           </div>
-          <h2 className="text-[26px] font-semibold leading-normal text-black">
-            {questionText}
-          </h2>
-          {helpText && (
-            <p className="text-sm leading-relaxed text-black/50">{helpText}</p>
-          )}
+          <span style={{ position: 'relative', display: 'inline' }}>
+            <h2 className="text-[26px] font-semibold leading-normal text-black inline">
+              {questionText}<HelpTooltip
+                helpText={currentQuestion.helpText}
+                caregiverHelpText={currentQuestion.caregiverHelpText}
+              />
+            </h2>
+          </span>
         </div>
 
         <QuestionInput

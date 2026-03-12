@@ -1,5 +1,6 @@
 import { Poppins } from "next/font/google";
 import "./globals.css";
+import { CaregiverProvider } from "@/lib/CaregiverContext";
 
 const poppins = Poppins({
   variable: "--font-poppins",
@@ -20,7 +21,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="en">
       <body className={`${poppins.variable} antialiased`}>
-        {children}
+        <CaregiverProvider>{children}</CaregiverProvider>
       </body>
     </html>
   );

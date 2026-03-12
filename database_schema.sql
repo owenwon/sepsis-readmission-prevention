@@ -98,16 +98,13 @@ CREATE TABLE patients (
     --                           Amplifies heart_rate_zone=3 score: +30 → +40
     --                           Amplifies breathing_level=2 score: +8 → +16 (same as lung)
     --
-    --   has_hypertension      ← hypertension (UI/tracking only, no riskCalculator effect)
-    --   has_diabetes          ← diabetes (UI/tracking only, no riskCalculator effect)
-    --   has_other_chronic_conditions ← any other selected condition
+    -- Privacy: Only risk-relevant booleans are stored. Specific condition
+    -- selections are never persisted — the user re-selects each session and
+    -- only the derived booleans are written to the database.
     -- =========================================================================
     has_weakened_immune BOOLEAN DEFAULT false,
     has_lung_condition BOOLEAN DEFAULT false,
     has_heart_failure BOOLEAN DEFAULT false,
-    has_hypertension BOOLEAN DEFAULT false,
-    has_diabetes BOOLEAN DEFAULT false,
-    has_other_chronic_conditions BOOLEAN DEFAULT false,
 
     -- =========================================================================
     -- RECENT / ACTIVE ILLNESSES
@@ -127,13 +124,11 @@ CREATE TABLE patients (
     --                           Amplifies uti_symptoms_worsening='same' score: +10 → +18
     --                           Amplifies uti_symptoms_worsening='worsened' score: +30 → +40
     --
-    --   has_other_acute_illnesses ← any other selected illness (UI/tracking only)
     -- =========================================================================
     has_recent_uti BOOLEAN DEFAULT false,
     has_recent_pneumonia BOOLEAN DEFAULT false,
     has_had_septic_shock BOOLEAN DEFAULT false,
     has_urinary_catheter BOOLEAN DEFAULT false,
-    has_other_acute_illnesses BOOLEAN DEFAULT false,
 
     -- =========================================================================
     -- MEDICATIONS
@@ -144,10 +139,15 @@ CREATE TABLE patients (
     --                           Used by isHighRiskPatient() in riskCalculator:
     --                           triggers 25% score multiplier
     --
-    --   has_other_medications ← any other selected medication (UI/tracking only)
+    -- Privacy: Specific medication names are never persisted — the user
+    -- re-selects each session and only the derived booleans are written
+    -- to the database.
     -- =========================================================================
-    current_medications JSONB,
     on_immunosuppressants BOOLEAN DEFAULT false,
+
+    -- has_other_medications: true if the patient takes any non-immunosuppressant
+    -- prescribed medication. Tracking only — no current riskCalculator effect.
+    -- Reserved for future analytics and care-coordination features.
     has_other_medications BOOLEAN DEFAULT false,
 
     -- =========================================================================
@@ -189,14 +189,6 @@ CREATE TABLE patients (
     -- =========================================================================
     baseline_bp_systolic INTEGER,
 
-    -- =========================================================================
-    -- RISK FLAG (derived / cached)
-    -- Auto-calculated by calculate_high_risk() trigger on INSERT and UPDATE.
-    -- Mirrors isHighRiskPatient() in riskCalculator.ts exactly:
-    --   age >= 65 OR has_weakened_immune OR admitted_count > 1 OR on_immunosuppressants
-    -- =========================================================================
-    is_high_risk BOOLEAN DEFAULT false,
-
     -- Timestamps
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
@@ -215,7 +207,6 @@ CREATE TABLE patients (
 
 -- Indexes
 CREATE INDEX idx_patients_created_at ON patients(created_at);
-CREATE INDEX idx_patients_high_risk ON patients(is_high_risk) WHERE is_high_risk = true;
 CREATE UNIQUE INDEX idx_patients_user_id ON patients(user_id);
 
 -- =============================================================================
@@ -480,35 +471,6 @@ CREATE TRIGGER update_daily_checkins_updated_at
     EXECUTE FUNCTION update_updated_at_column();
 
 -- =============================================================================
--- HIGH-RISK TRIGGER
--- Mirrors isHighRiskPatient() in riskCalculator.ts exactly:
---   (age !== undefined && age >= 65) || has_weakened_immune || admitted_count > 1
---   || (on_immunosuppressants ?? false)
--- Runs on every INSERT and UPDATE so is_high_risk is always current.
--- =============================================================================
-
-CREATE OR REPLACE FUNCTION calculate_high_risk()
-RETURNS TRIGGER AS $$
-DECLARE
-    patient_age INTEGER;
-BEGIN
-    patient_age := EXTRACT(YEAR FROM AGE(CURRENT_DATE, NEW.birthday));
-    NEW.is_high_risk := (
-        patient_age >= 65
-        OR NEW.has_weakened_immune
-        OR NEW.admitted_count > 1
-        OR NEW.on_immunosuppressants
-    );
-    RETURN NEW;
-END;
-$$ LANGUAGE plpgsql;
-
-CREATE TRIGGER calculate_patient_high_risk
-    BEFORE INSERT OR UPDATE ON patients
-    FOR EACH ROW
-    EXECUTE FUNCTION calculate_high_risk();
-
--- =============================================================================
 -- ROW LEVEL SECURITY (RLS)
 -- =============================================================================
 
@@ -670,7 +632,7 @@ SELECT
     dc.*,
     p.patient_name,
     calculate_age(p.birthday) AS age,
-    p.is_high_risk AS patient_high_risk
+    calculate_age(p.birthday) >= 65 OR p.has_weakened_immune OR p.admitted_count > 1 OR p.on_immunosuppressants AS patient_high_risk
 FROM daily_checkins dc
 JOIN patients p ON dc.patient_id = p.patient_id
 WHERE dc.risk_level IN ('RED', 'RED_EMERGENCY')
@@ -705,7 +667,7 @@ COMMENT ON COLUMN patients.has_heart_failure IS 'True if patient has congestive 
 COMMENT ON COLUMN patients.has_had_septic_shock IS 'True if patient has prior septic shock history. riskCalculator applyContextBonuses() adds flat +10 regardless of todays symptoms.';
 COMMENT ON COLUMN patients.has_urinary_catheter IS 'True if patient currently has a urinary catheter. Amplifies uti_symptoms_worsening scores: same→+18 (was +10), worsened→+40 (was +30).';
 COMMENT ON COLUMN patients.on_immunosuppressants IS 'True if patient takes any immunosuppressant, biologic, chemotherapy, or corticosteroid. Used by isHighRiskPatient() → 25% score multiplier.';
-COMMENT ON COLUMN patients.is_high_risk IS 'Auto-calculated by trigger on INSERT/UPDATE. Mirrors isHighRiskPatient() in riskCalculator.ts: age >= 65 OR has_weakened_immune OR admitted_count > 1 OR on_immunosuppressants.';
+
 COMMENT ON COLUMN patients.baseline_bp_systolic IS 'Baseline systolic BP from onboarding. Used by calculateZones() for blood pressure zone calculation. Defaults to 120 in riskCalculator if NULL.';
 COMMENT ON COLUMN patients.discharge_date IS 'Approximate date of last sepsis-related hospital discharge. Derived from a bucketed range selected during onboarding (not an exact date). Used to compute days since discharge at runtime as CURRENT_DATE - discharge_date. Replaces the old days_since_last_discharge integer. Never store a computed delta — always derive it fresh each day.';
 
@@ -754,12 +716,12 @@ INSERT INTO patients (
     has_weakened_immune,
     has_lung_condition,
     has_heart_failure,
-    has_diabetes,
     has_recent_uti,
     has_recent_pneumonia,
     has_had_septic_shock,
     has_urinary_catheter,
     on_immunosuppressants,
+    has_other_medications,
     has_caregiver,
     caregiver_availability,
     physical_ability_level,
@@ -783,12 +745,11 @@ INSERT INTO patients (
     false,
     true,   -- has COPD
     false,
-    true,   -- has diabetes
     true,   -- recent UTI
     false,
     false,
     false,
-    false,
+    false,  -- has_other_medications
     true,
     'full_time',
     'tires_easily',

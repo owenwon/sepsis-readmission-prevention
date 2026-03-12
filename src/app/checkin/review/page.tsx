@@ -590,7 +590,9 @@ export default function ReviewCheckinPage() {
 
         // Hydrate local answers from DB record
         const hydrated = hydrateAnswersFromDb(checkinData, prof);
-        const risk = calculateSepsisRisk(buildSurveyResponse(hydrated, prof) as any);
+
+        const surveyForInitRisk = buildSurveyResponse(hydrated, prof) as any;
+        const risk = calculateSepsisRisk(surveyForInitRisk);
 
         setProfile(prof);
         setAnswers(hydrated);
@@ -730,10 +732,12 @@ export default function ReviewCheckinPage() {
     // Strip DB metadata (risk_level, daily_checkin_id, etc.) so stale values
     // never leak into the recalculation.
     const cachedRow = cachedCheckinRef.current;
-    const answersForRisk = cachedRow
-      ? { ...stripDbMetadata(cachedRow), ...updated }
+    const strippedCache = cachedRow ? stripDbMetadata(cachedRow) : null;
+    const answersForRisk = strippedCache
+      ? { ...strippedCache, ...updated }
       : updated;
-    const newRisk = calculateSepsisRisk(buildSurveyResponse(answersForRisk, profile) as any);
+    const surveyForRisk = buildSurveyResponse(answersForRisk, profile) as any;
+    const newRisk = calculateSepsisRisk(surveyForRisk);
     setCurrentRisk(newRisk);
 
     // Track "edited" indicator — only if value genuinely differs from original

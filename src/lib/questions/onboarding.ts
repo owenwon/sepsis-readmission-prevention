@@ -82,32 +82,29 @@ export const onboardingQuestions: Question[] = [
   },
 
   {
-    id: 'days_since_last_discharge',
+    id: 'discharge_date',
     section: 'Sepsis Context',
-    patientText: 'How long ago was your last sepsis-related admission?',
-    caregiverText: "How long ago was the patient's last sepsis-related admission?",
-    type: 'single_select',
-    options: [
-      { label: 'Less than 7 days ago', value: 3 },
-      { label: '1–4 weeks ago', value: 17 },
-      { label: '1–3 months ago', value: 60 },
-      { label: 'More than 3 months ago', value: 120 },
-    ],
+    patientText: 'When were you last discharged from the hospital for sepsis?',
+    caregiverText: 'When was the patient last discharged from the hospital for sepsis?',
+    type: 'date',
     schemaField: ['discharge_date', 'sepsis_status'],
-    helpText: 'Pick the date you were released from the hospital, not when you first got sick.',
-    caregiverHelpText: 'Pick the date the patient was released from the hospital, not when they first got sick.',
+    helpText: 'Pick the date you were released from the hospital, not when you first got sick. Your best estimate is fine.',
+    caregiverHelpText: 'Pick the date the patient was released from the hospital, not when they first got sick. Your best estimate is fine.',
     prerequisites: [
       { field: 'currently_hospitalized', operator: '==', value: false },
     ],
     validation: { required: true },
     businessLogic: {
       mapToMultipleFields: true,
-      customMapping: (value: number) => ({
-        discharge_date: new Date(Date.now() - value * 86_400_000)
-          .toISOString()
-          .split('T')[0],
-        sepsis_status: value <= 90 ? 'recently_discharged' : 'other',
-      }),
+      customMapping: (value: string) => {
+        const daysSince = Math.floor(
+          (Date.now() - new Date(value).getTime()) / 86_400_000,
+        );
+        return {
+          discharge_date: value,
+          sepsis_status: daysSince <= 90 ? 'recently_discharged' : 'other',
+        };
+      },
     },
   },
 
@@ -133,7 +130,7 @@ export const onboardingQuestions: Question[] = [
         if (value > 1) {
           // Only write sepsis_status when we are certain it should be 'readmitted'.
           // When value === 1, we intentionally omit sepsis_status so we do not
-          // overwrite the 'recently_discharged' value that days_since_last_discharge
+          // overwrite the 'recently_discharged' value that discharge_date
           // may have already set. Two mappings write to the same DB column; the later
           // one must never silently clobber the earlier one with undefined.
           result.sepsis_status = 'readmitted';
@@ -199,8 +196,6 @@ export const onboardingQuestions: Question[] = [
       'has_weakened_immune',
       'has_lung_condition',
       'has_heart_failure',
-      'has_hypertension',
-      'has_other_chronic_conditions',
     ],
     businessLogic: {
       mapToMultipleFields: true,
@@ -217,15 +212,6 @@ export const onboardingQuestions: Question[] = [
           values.includes('cystic_fibrosis') ||
           values.includes('sleep_apnea'),
         has_heart_failure: values.includes('congestive_heart_failure'),
-        has_hypertension: values.includes('hypertension'),
-        has_other_chronic_conditions:
-          values.some((v) =>
-            ![
-              'cancer', 'hiv_aids', 'autoimmune', 'weakened_immune',
-              'copd', 'asthma', 'lung_fibrosis', 'cystic_fibrosis', 'sleep_apnea',
-              'congestive_heart_failure', 'hypertension', 'none',
-            ].includes(v)
-          ),
       }),
     },
   },
@@ -270,7 +256,6 @@ export const onboardingQuestions: Question[] = [
       'has_recent_pneumonia',
       'has_had_septic_shock',
       'has_urinary_catheter',
-      'has_other_acute_illnesses',
     ],
     businessLogic: {
       mapToMultipleFields: true,
@@ -279,10 +264,6 @@ export const onboardingQuestions: Question[] = [
         has_recent_pneumonia: values.includes('pneumonia'),
         has_had_septic_shock: values.includes('septic_shock'),
         has_urinary_catheter: values.includes('urinary_catheter'),
-        has_other_acute_illnesses:
-          values.some((v) =>
-            !['uti', 'pneumonia', 'septic_shock', 'urinary_catheter', 'none'].includes(v)
-          ),
       }),
     },
   },
@@ -616,9 +597,7 @@ export const onboardingQuestions: Question[] = [
 
         return {
           on_immunosuppressants: medications.some((m) => immunosuppressants.includes(m)),
-          has_other_medications: medications.some(
-            (m) => !immunosuppressants.includes(m) && m !== 'none'
-          ),
+          has_other_medications: medications.some((m) => !immunosuppressants.includes(m)),
         };
       },
     },

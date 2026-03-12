@@ -4,6 +4,7 @@ import Link from "next/link";
 import Image from "next/image";
 import type { RiskLevel } from "@/types/database";
 import { getLocalToday } from "@/lib/localDate";
+import DashboardMenuButton from "@/components/DashboardMenuButton";
 
 // Always re-render on every request so the dashboard reflects the latest
 // risk_level written by the review/check-in pages.
@@ -156,15 +157,7 @@ export default async function DashboardPage() {
           />
           <span className="text-2xl font-black text-white">Tillage</span>
         </div>
-        <button className="flex flex-col items-center justify-center cursor-pointer">
-          <Image
-            src="/images/dashboard/menu-icon.svg"
-            alt="Menu"
-            width={24}
-            height={24}
-          />
-          <span className="text-xs text-white">Menu</span>
-        </button>
+        <DashboardMenuButton patientName={patient.patient_name} />
       </nav>
 
       {/* greeting + risk card */}
