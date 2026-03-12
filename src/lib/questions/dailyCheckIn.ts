@@ -223,7 +223,7 @@ export const dailyCheckInQuestions: Question[] = [
     ],
     validation: {
       required: true,
-      min: 0,
+      min: 50,
       max: 100,
     },
     unit: '%',
