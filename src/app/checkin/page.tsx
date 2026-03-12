@@ -234,6 +234,15 @@ export default function CheckInPage() {
   };
 
   const handleContinue = async () => {
+    if (!hasAnswer) return;
+
+    const error = currentQuestion ? validateCurrentQuestion(currentQuestion, currentValue) : null;
+    if (error) {
+      setValidationError(error);
+      return;
+    }
+    setValidationError(null);
+
     if (
       currentQuestion?.businessLogic?.requiresEmergencyAlert &&
       currentQuestion.businessLogic.triggerWhen &&
@@ -248,14 +257,7 @@ export default function CheckInPage() {
       });
       return;
     }
-    if (!hasAnswer) return;
-
-    const error = currentQuestion ? validateCurrentQuestion(currentQuestion, currentValue) : null;
-    if (error) {
-      setValidationError(error);
-      return;
-    }
-    setValidationError(null);
+  
     if (currentIndex < totalQuestions - 1) {
       setCurrentIndex(currentIndex + 1);
     } else {
