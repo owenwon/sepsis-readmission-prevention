@@ -59,7 +59,7 @@ export function validateCurrentQuestion(question: Question, value: any): string 
     }
   }
 
-  // patient has to be at least 18 years old and birthdate cannot be in the future or ridiculously old
+  // Date validation — applies to all date fields
   if (question.type === 'date' && typeof value === 'string') {
     const parts = value.split('-');
     if (parts.length !== 3) return 'Please enter a valid date.';
@@ -76,14 +76,17 @@ export function validateCurrentQuestion(question: Question, value: any): string 
 
     if (date > today) return 'Date cannot be in the future.';
 
-    let age = today.getFullYear() - date.getFullYear();
-    const monthDiff = today.getMonth() - date.getMonth();
-    if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < date.getDate())) {
-      age--;
-    }
+    // Age validation — only for the birthday question
+    if (question.id === 'birthday') {
+      let age = today.getFullYear() - date.getFullYear();
+      const monthDiff = today.getMonth() - date.getMonth();
+      if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < date.getDate())) {
+        age--;
+      }
 
-    if (age < 18) return 'Patient must be at least 18 years old.';
-    if (age > 120) return 'Please enter a valid birth date.';
+      if (age < 18) return 'Patient must be at least 18 years old.';
+      if (age > 120) return 'Please enter a valid birth date.';
+    }
   }
 
   return null;

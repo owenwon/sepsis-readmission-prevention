@@ -1,10 +1,12 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { onboardingQuestions } from "@/lib/questions";
 import { validateCurrentQuestion, hasAnswerForQuestion } from "@/lib/questions/validate";
 import type { Question } from "@/lib/questions/types";
+import { useCaregiver } from "@/lib/CaregiverContext";
+import HelpTooltip from "@/components/HelpTooltip";
 
 // ============================================================================
 // Design tokens from Figma (same as check-in)
@@ -35,7 +37,13 @@ export default function OnboardingPage() {
   const [validationError, setValidationError] = useState<string | null>(null);
 
   // Determine user mode from first question answer
+  const { setIsCaregiver } = useCaregiver();
   const isCaregiver = answers["user_type"] === "caregiver";
+
+  // Sync caregiver context when user_type answer changes
+  useEffect(() => {
+    setIsCaregiver(isCaregiver);
+  }, [isCaregiver, setIsCaregiver]);
 
   // Filter questions based on prerequisites and caregiver mode
   const visibleQuestions = onboardingQuestions.filter((q) => {
@@ -220,10 +228,6 @@ export default function OnboardingPage() {
     ? currentQuestion.caregiverText || currentQuestion.patientText
     : currentQuestion.patientText;
 
-  const helpText = isCaregiver
-    ? currentQuestion.caregiverHelpText || currentQuestion.helpText
-    : currentQuestion.helpText;
-
   // ----- Main question screen -----
   return (
     <div className={`${colors.bg} flex min-h-dvh flex-col items-center justify-between px-4 pb-20 pt-2.5`}>
@@ -258,13 +262,14 @@ export default function OnboardingPage() {
             />
           </div>
 
-          <h2 className="text-[26px] font-semibold leading-normal text-black">
-            {questionText}
-          </h2>
-
-          {helpText && (
-            <p className="text-sm leading-relaxed text-black/50">{helpText}</p>
-          )}
+          <span style={{ position: 'relative', display: 'inline' }}>
+            <h2 className="text-[26px] font-semibold leading-normal text-black inline">
+              {questionText}<HelpTooltip
+                helpText={currentQuestion.helpText}
+                caregiverHelpText={currentQuestion.caregiverHelpText}
+              />
+            </h2>
+          </span>
         </div>
 
         {/* Answer options */}

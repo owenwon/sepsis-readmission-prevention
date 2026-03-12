@@ -164,9 +164,9 @@ import type {
 
 /**
  * Patient form data (partial Patient for form submission)
- * Excludes auto-generated fields like patient_id, is_high_risk, timestamps
+ * Excludes auto-generated fields like patient_id, timestamps
  */
-export type PatientFormData = Partial<Omit<Patient, 'patient_id' | 'is_high_risk' | 'created_at' | 'updated_at'>> & {
+export type PatientFormData = Partial<Omit<Patient, 'patient_id' | 'created_at' | 'updated_at'>> & {
   user_id: string;
 };
 

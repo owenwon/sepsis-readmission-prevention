@@ -230,7 +230,7 @@ function checkEmergencyConditions(response: SurveyResponse, zones: ComputedZones
 function checkHardRedOverrides(response: SurveyResponse, zones: ComputedZones): RiskCalculationResult | null {
   const reasoning: string[] = [];
 
-  if (response.temperature_value !== undefined && response.temperature_value >= 103.5) {
+  if (response.temperature_value != null && response.temperature_value >= 103.5) {
     reasoning.push(`CRITICAL: Temperature ${response.temperature_value}°F (≥103.5°F threshold)`);
     return {
       riskLevel: 'RED_EMERGENCY', totalScore: 1000, baseScore: 0, interactionScore: 0,
@@ -239,7 +239,7 @@ function checkHardRedOverrides(response: SurveyResponse, zones: ComputedZones): 
     };
   }
 
-  if (response.oxygen_level_value !== undefined && response.oxygen_level_value < 90) {
+  if (response.oxygen_level_value != null && response.oxygen_level_value < 90) {
     reasoning.push(`CRITICAL: Oxygen level ${response.oxygen_level_value}% (<90% threshold)`);
     return {
       riskLevel: 'RED_EMERGENCY', totalScore: 1000, baseScore: 0, interactionScore: 0,
@@ -248,7 +248,7 @@ function checkHardRedOverrides(response: SurveyResponse, zones: ComputedZones): 
     };
   }
 
-  if (response.heart_rate_value !== undefined && response.heart_rate_value > 140) {
+  if (response.heart_rate_value != null && response.heart_rate_value > 140) {
     reasoning.push(`CRITICAL: Heart rate ${response.heart_rate_value} bpm (>140 bpm threshold)`);
     return {
       riskLevel: 'RED_EMERGENCY', totalScore: 1000, baseScore: 0, interactionScore: 0,
@@ -256,6 +256,7 @@ function checkHardRedOverrides(response: SurveyResponse, zones: ComputedZones): 
       emergencyMessage: 'CALL 911 IMMEDIATELY - Dangerously high heart rate'
     };
   }
+
 
   if (response.breathing_level === 3) {
     reasoning.push('CRITICAL: Extremely difficult breathing, major shortness of breath');
@@ -341,14 +342,14 @@ function detectSepsisPatterns(response: SurveyResponse, zones: ComputedZones): {
     setEscalation('RED', 'Brain function affected by infection - seek immediate medical attention');
   }
 
-  const bpIsLow = response.blood_pressure_systolic !== undefined &&
+  const bpIsLow = response.blood_pressure_systolic != null &&
     response.blood_pressure_systolic <= (response.baseline_bp_systolic || 120);
   if (bpZone >= 2 && bpIsLow && (zones.heart_rate_zone ?? 0) >= 2) {
     detectedPatterns.push('Compensated shock pattern: Low blood pressure with elevated heart rate');
     setEscalation('RED', 'Pre-shock state detected - seek immediate medical attention');
   }
 
-  if (response.temperature_value !== undefined && response.temperature_value < 96.8) {
+  if (response.temperature_value != null && response.temperature_value < 96.8) {
     detectedPatterns.push(`Hypothermia: ${response.temperature_value}°F - severe sepsis indicator`);
     setEscalation('RED', 'Hypothermia in infection setting - seek immediate medical attention');
   }
@@ -693,11 +694,15 @@ export function calculateSepsisRisk(response: SurveyResponse): RiskCalculationRe
   // zones is passed in so early-exit returns can include it in the result,
   // satisfying the zone_consistency_* DB constraints even on emergency paths.
   const emergency = checkEmergencyConditions(response, zones);
-  if (emergency) return emergency;
+  if (emergency) {
+    return emergency;
+  }
 
   // STEP 2: Hard RED overrides
   const hardRed = checkHardRedOverrides(response, zones);
-  if (hardRed) return hardRed;
+  if (hardRed) {
+    return hardRed;
+  }
 
   // STEP 3: Detect sepsis patterns
   const patternResult = detectSepsisPatterns(response, zones);

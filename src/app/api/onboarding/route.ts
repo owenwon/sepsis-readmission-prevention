@@ -13,13 +13,10 @@ const ALLOWED_COLUMNS = [
   "has_weakened_immune",
   "has_lung_condition",
   "has_heart_failure",
-  "has_hypertension",
-  "has_other_chronic_conditions",
   "has_recent_uti",
   "has_recent_pneumonia",
   "has_had_septic_shock",
   "has_urinary_catheter",
-  "has_other_acute_illnesses",
   "on_immunosuppressants",
   "has_other_medications",
   "has_caregiver",
@@ -92,38 +89,52 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // Handle current_medications as JSONB (raw array of medication value strings)
-    if (body.current_medications !== undefined) {
-      payload.current_medications = Array.isArray(body.current_medications)
-        ? body.current_medications
-        : [];
-    }
-
-    // 4. Validate required fields
+    // 4. Validate fields only when present in the payload.
+    //    Full onboarding sends both patient_name and birthday so they get
+    //    validated. Partial saves from Settings omit them entirely, so these
+    //    checks are skipped — the patient already completed onboarding.
     if (
-      typeof payload.patient_name !== "string" ||
-      payload.patient_name.length < 2 ||
-      payload.patient_name.length > 100
+      payload.patient_name !== undefined &&
+      (typeof payload.patient_name !== "string" ||
+        payload.patient_name.length < 2 ||
+        payload.patient_name.length > 100)
     ) {
       return NextResponse.json(
-        { error: "patient_name is required and must be 2–100 characters." },
+        { error: "patient_name must be 2–100 characters." },
         { status: 400 }
       );
     }
 
-    if (!payload.birthday || isNaN(Date.parse(payload.birthday))) {
+    if (
+      payload.birthday !== undefined &&
+      isNaN(Date.parse(payload.birthday))
+    ) {
       return NextResponse.json(
-        { error: "birthday is required and must be a valid date string." },
+        { error: "birthday must be a valid date string." },
         { status: 400 }
       );
     }
 
-    // 5. Upsert into patients table
-    const { data, error } = await supabase
-      .from("patients")
-      .upsert(payload, { onConflict: "user_id" })
-      .select("patient_id")
-      .single();
+    // 5. Insert or update the patients table.
+    //    Full onboarding sends patient_name + birthday (NOT NULL columns), so
+    //    upsert is safe.  Partial saves from Settings omit them, so we must use
+    //    a plain UPDATE to avoid a NOT NULL constraint violation — Postgres
+    //    validates the full row on an INSERT … ON CONFLICT DO UPDATE.
+    const isPartialUpdate =
+      payload.patient_name === undefined || payload.birthday === undefined;
+
+    const { data, error } = isPartialUpdate
+      ? await supabase
+          .from("patients")
+          .update(payload)
+          .eq("user_id", user.id)
+          .select("patient_id")
+          .single()
+      : await supabase
+          .from("patients")
+          .upsert(payload, { onConflict: "user_id" })
+          .select("patient_id")
+          .single();
 
     if (error) {
       return NextResponse.json({ error: error.message }, { status: 500 });
