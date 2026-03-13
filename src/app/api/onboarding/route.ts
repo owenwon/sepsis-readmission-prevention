@@ -128,19 +128,22 @@ export async function POST(req: NextRequest) {
           .from("patients")
           .update(payload)
           .eq("user_id", user.id)
-          .select("patient_id")
+          .select("patient_id, updated_at")
           .single()
       : await supabase
           .from("patients")
           .upsert(payload, { onConflict: "user_id" })
-          .select("patient_id")
+          .select("patient_id, updated_at")
           .single();
 
     if (error) {
       return NextResponse.json({ error: error.message }, { status: 500 });
     }
 
-    return NextResponse.json({ patient_id: data.patient_id }, { status: 200 });
+    return NextResponse.json(
+      { patient_id: data.patient_id, updated_at: data.updated_at },
+      { status: 200 },
+    );
   } catch (err: any) {
     return NextResponse.json(
       { error: err.message ?? "Internal server error" },
