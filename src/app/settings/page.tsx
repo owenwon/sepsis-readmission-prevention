@@ -7,6 +7,7 @@ import { useCaregiver } from "@/lib/CaregiverContext";
 import { onboardingQuestions, getOnboardingQuestion } from "@/lib/questions/onboarding";
 import { QuestionInput } from "@/components/CheckInComponents";
 import HelpTooltip from "@/components/HelpTooltip";
+import DatePickerInput from "@/components/DatePickerInput";
 import type { Question } from "@/lib/questions/types";
 
 // ============================================================================
@@ -587,18 +588,15 @@ export default function SettingsPage() {
             saveStatus={getStatus("birthday").status}
             saveError={getStatus("birthday").error}
           >
-            <input
-              type="date"
+            <DatePickerInput
               value={profile.birthday ?? ""}
               max={new Date().toISOString().split("T")[0]}
-              onChange={(e) => {
-                const val = e.target.value;
+              onChange={(val) => {
                 setProfile((prev) => (prev ? { ...prev, birthday: val } : prev));
                 if (val) {
                   debouncedSave({ birthday: val }, "birthday");
                 }
               }}
-              className="h-[50px] w-full rounded-[14px] bg-[#f4f4f4] px-5 py-3 text-lg text-black outline-none focus:ring-2 focus:ring-[#186346]"
             />
           </SettingField>
 
@@ -646,12 +644,10 @@ export default function SettingsPage() {
               saveStatus={getStatus("discharge_date").status}
               saveError={getStatus("discharge_date").error}
             >
-              <input
-                type="date"
+              <DatePickerInput
                 value={profile.discharge_date ?? ""}
                 max={new Date().toISOString().split("T")[0]}
-                onChange={(e) => {
-                  const val = e.target.value;
+                onChange={(val) => {
                   setProfile((prev) => (prev ? { ...prev, discharge_date: val } : prev));
                   if (val) {
                     const daysSince = Math.floor(
@@ -664,7 +660,6 @@ export default function SettingsPage() {
                     );
                   }
                 }}
-                className="h-[50px] w-full rounded-[14px] bg-[#f4f4f4] px-5 py-3 text-lg text-black outline-none focus:ring-2 focus:ring-[#186346]"
               />
             </SettingField>
           )}

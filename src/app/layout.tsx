@@ -1,4 +1,5 @@
 import { Poppins } from "next/font/google";
+import "react-day-picker/style.css";
 import "./globals.css";
 import { CaregiverProvider } from "@/lib/CaregiverContext";
 

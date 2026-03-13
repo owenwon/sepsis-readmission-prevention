@@ -7,6 +7,7 @@ import { validateCurrentQuestion, hasAnswerForQuestion } from "@/lib/questions/v
 import type { Question } from "@/lib/questions/types";
 import { useCaregiver } from "@/lib/CaregiverContext";
 import HelpTooltip from "@/components/HelpTooltip";
+import DatePickerInput from "@/components/DatePickerInput";
 
 // ============================================================================
 // Design tokens from Figma (same as check-in)
@@ -481,11 +482,10 @@ function QuestionInput({
     // ---- Date ----
     case "date":
       return (
-        <input
-          type="date"
+        <DatePickerInput
           value={value || ""}
-          onChange={(e) => onChange(e.target.value)}
-          className="h-[50px] w-full rounded-[14px] bg-[#f4f4f4] px-5 py-3 text-lg text-black outline-none focus:ring-2 focus:ring-[#186346]"
+          onChange={(iso) => onChange(iso)}
+          max={new Date().toISOString().split("T")[0]}
         />
       );
 

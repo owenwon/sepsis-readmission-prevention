@@ -16,3 +16,9 @@ body {
   color: var(--foreground);
   font-family: var(--font-poppins), sans-serif;
 }
+
+/* ── react-day-picker accent overrides ── */
+.rdp-root {
+  --rdp-accent-color: #186346;
+  --rdp-accent-background-color: #dcf5f0;
+}
