@@ -343,34 +343,36 @@ export default function CheckInPage() {
   // ----- Emergency alert overlay -----
   if (emergency && !emergencyDismissed) {
     return (
-      <div className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-red-700 px-6 text-center">
-        <p className="text-5xl">🚨</p>
-        <h1 className="mt-6 text-2xl font-bold text-white leading-snug">
-          Based on your answers, we strongly recommend seeking emergency care right away.
-        </h1>
-        <p className="mt-4 text-base font-medium text-white/90">
-          Please contact emergency services or have someone take you to the nearest emergency room.
-        </p>
-        <p className="mt-3 text-sm text-white/70">
-          Do not drive yourself. If you are alone, call someone who can help or contact emergency services directly.
-        </p>
-        {(emergency.emergencyMessage || emergency.message) && (
-          <p className="mt-4 text-xs text-white/40">
-            {emergency.emergencyMessage ?? emergency.message}
+      <div className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-[#ff3636] px-4">
+        <div className="flex w-full max-w-md flex-col items-center gap-6">
+          <h1 className="text-center text-3xl font-semibold leading-tight text-white">
+            Seek emergency care right away
+          </h1>
+          <p className="max-w-xs text-center text-lg text-white">
+            <a href="tel:911" className="text-white font-bold underline">Call 911</a> or visit your nearest emergency room as soon as possible.
           </p>
-        )}
-        <button
-          onClick={async () => {
-            if (!emergencySubmittedRef.current) {
-              emergencySubmittedRef.current = true;
-              await submitPartialCheckin();
-            }
-            setEmergencyDismissed(true);
-          }}
-          className="mt-10 flex h-[54px] w-full max-w-[380px] cursor-pointer items-center justify-center rounded-[14px] bg-white px-6 text-lg font-semibold text-red-700"
-        >
-          I understand — go to my dashboard
-        </button>
+          <button
+            onClick={async () => {
+              if (!emergencySubmittedRef.current) {
+                emergencySubmittedRef.current = true;
+                await submitPartialCheckin();
+              }
+              setEmergencyDismissed(true);
+            }}
+            className="flex h-[50px] w-full cursor-pointer items-center justify-center rounded-[14px] bg-white text-lg font-semibold text-black transition-opacity hover:opacity-90"
+          >
+            I understand
+          </button>
+          <button
+            onClick={() => {
+              setEmergency(null);
+              emergencySubmittedRef.current = false;
+            }}
+            className="cursor-pointer text-base text-white underline"
+          >
+            I did not mean to select this
+          </button>
+        </div>
       </div>
     );
   }
