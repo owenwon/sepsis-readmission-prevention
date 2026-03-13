@@ -142,6 +142,13 @@ function hydrateAnswersFromDb(
       // Reverse mapping: DB null → UI "none"
       const dbValue = checkin.wound_state_level;
       uiValue = dbValue == null ? "none" : dbValue;
+    } else if (question.id === "uti_symptoms_worsening") {
+      const dbValue = checkin.uti_symptoms_worsening;
+      if (dbValue && dbValue !== "not_applicable") {
+        uiValue = dbValue;
+      } else {
+        continue; // Skip — never explicitly answered, don't show on review page
+      }
     } else {
       // Standard: get value from the question's schema field
       const field =

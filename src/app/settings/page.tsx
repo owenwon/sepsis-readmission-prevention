@@ -142,7 +142,7 @@ function SectionHeader({
     : patientDescription;
 
   return (
-    <div className="mb-4 mt-8 first:mt-0">
+    <div className="mb-4 mt-8 first-of-type:mt-2">
       <h2 className="text-xl font-semibold text-black">{title}</h2>
       {desc && (
         <p className="mt-1 text-sm leading-relaxed text-black/50">{desc}</p>
@@ -162,7 +162,6 @@ function SettingField({
   saveStatus,
   saveError,
   helperText,
-  lastUpdated,
   children,
 }: {
   label: string;
@@ -172,7 +171,6 @@ function SettingField({
   saveStatus?: "idle" | "saving" | "saved" | "error";
   saveError?: string;
   helperText?: string;
-  lastUpdated?: string;
   children: React.ReactNode;
 }) {
   return (
@@ -193,11 +191,6 @@ function SettingField({
         <p className="mb-2 text-sm text-black/40">{helperText}</p>
       )}
       {children}
-      {lastUpdated && (
-        <p className="mt-1 text-xs text-black/30">
-          Last updated: {new Date(lastUpdated).toLocaleDateString()}
-        </p>
-      )}
     </div>
   );
 }
@@ -371,6 +364,8 @@ export default function SettingsPage() {
           body: JSON.stringify(fields),
         });
 
+        const data = await res.json().catch(() => ({}));
+
         if (res.ok) {
           setSaveStatuses((prev) => ({
             ...prev,
@@ -384,10 +379,19 @@ export default function SettingsPage() {
             }));
           }, 2000);
           // Update local profile
-          setProfile((prev) => (prev ? { ...prev, ...fields } : prev));
+          setProfile((prev) =>
+            prev
+              ? {
+                  ...prev,
+                  ...fields,
+                  ...(data.updated_at
+                    ? { updated_at: data.updated_at }
+                    : {}),
+                }
+              : prev,
+          );
           return true;
         } else {
-          const data = await res.json();
           setSaveStatuses((prev) => ({
             ...prev,
             [fieldKey]: { status: "error", error: data.error ?? "Save failed" },
@@ -524,6 +528,10 @@ export default function SettingsPage() {
       {/* ---- Content ---- */}
       <div className="flex-1 overflow-y-auto px-4 pb-20">
         <div className="mx-auto w-full max-w-[430px]">
+          <p className="text-xs text-black/30">
+            Last updated: {new Date(profile.updated_at).toLocaleDateString()}
+          </p>
+
           {/* ================================================================
               SECTION 1: Account
               ================================================================ */}
@@ -816,7 +824,6 @@ export default function SettingsPage() {
             isCaregiver={isCaregiver}
             saveStatus={getStatus("has_recent_uti").status}
             saveError={getStatus("has_recent_uti").error}
-            lastUpdated={profile.updated_at}
           >
             <Toggle
               checked={profile.has_recent_uti ?? false}
@@ -834,7 +841,6 @@ export default function SettingsPage() {
             isCaregiver={isCaregiver}
             saveStatus={getStatus("has_recent_pneumonia").status}
             saveError={getStatus("has_recent_pneumonia").error}
-            lastUpdated={profile.updated_at}
           >
             <Toggle
               checked={profile.has_recent_pneumonia ?? false}
@@ -856,7 +862,6 @@ export default function SettingsPage() {
             isCaregiver={isCaregiver}
             saveStatus={getStatus("has_urinary_catheter").status}
             saveError={getStatus("has_urinary_catheter").error}
-            lastUpdated={profile.updated_at}
           >
             <Toggle
               checked={profile.has_urinary_catheter ?? false}

@@ -164,7 +164,7 @@ export default function OnboardingPage() {
         setSubmitting(false);
       }
     }
-    window.scrollTo({ top: 0, behavior: 'smooth' });
+    window.scrollTo({ top: 0, behavior: 'auto' });
   };
 
   const handleBack = () => {
@@ -184,15 +184,6 @@ export default function OnboardingPage() {
     return (
       <div className={`${colors.bg} flex min-h-dvh flex-col items-center justify-between px-4 pb-20 pt-2.5`}>
         <div className="flex w-full max-w-[430px] flex-col gap-6">
-          <div className="flex flex-col items-end">
-            <button
-              onClick={handleRestart}
-              className="cursor-pointer rounded-[9px] bg-[#f4f4f4] px-3 py-[7px] text-xs font-medium text-black"
-            >
-              Restart
-            </button>
-          </div>
-
           {/* Full progress bar */}
           <div className="flex w-full flex-col gap-4">
             <div className={`flex w-full items-center rounded-full ${colors.trackBg}`}>
@@ -204,13 +195,6 @@ export default function OnboardingPage() {
             <p className="text-sm text-black/60">Your profile has been set up. You&apos;re ready to start tracking your health.</p>
           </div>
         </div>
-
-        <button
-          onClick={handleRestart}
-          className={`${colors.primaryBg} flex h-[50px] w-full max-w-[430px] cursor-pointer items-center justify-center rounded-[14px] px-6 py-[5px] text-lg font-semibold text-white`}
-        >
-          Start Over
-        </button>
       </div>
     );
   }
