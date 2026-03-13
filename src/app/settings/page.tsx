@@ -20,6 +20,8 @@ const colors = {
   disabledText: "#a0a09b",
 };
 
+const EMPTY_MULTI_SELECT_VALUES: string[] = [];
+
 // ============================================================================
 // Types
 // ============================================================================
@@ -486,10 +488,6 @@ export default function SettingsPage() {
   const getStatus = (key: string) =>
     saveStatuses[key] ?? { status: "idle" as const };
 
-  // Current conditions state
-  const currentConditions =
-    reverseMapConditions(profile);
-
   // ==================================================================
   // Render
   // ==================================================================
@@ -752,7 +750,7 @@ export default function SettingsPage() {
             </p>
             <ConditionsMultiSelect
               question={chronicConditionsQuestion}
-              initialValues={[]}
+              initialValues={initialConditions}
               profile={profile}
               onDirtyChange={setConditionsChanged}
               onProfileUpdate={(fields) =>
@@ -902,7 +900,7 @@ export default function SettingsPage() {
             </p>
             <MedicationsMultiSelect
               question={medicationsQuestion}
-              initialValues={[]}
+              initialValues={EMPTY_MULTI_SELECT_VALUES}
               profile={profile}
               onDirtyChange={setMedsChanged}
               onProfileUpdate={(fields) =>
