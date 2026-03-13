@@ -4,7 +4,9 @@ import Link from "next/link";
 import Image from "next/image";
 import type { RiskLevel } from "@/types/database";
 import { getLocalToday } from "@/lib/localDate";
+import { getDashboardReminders, type ReminderId } from "@/lib/dashboardReminders";
 import DashboardMenuButton from "@/components/DashboardMenuButton";
+import DashboardRemindersSection from "@/components/DashboardRemindersSection";
 
 // Always re-render on every request so the dashboard reflects the latest
 // risk_level written by the review/check-in pages.
@@ -48,7 +50,7 @@ export default async function DashboardPage() {
   // Check if user has completed onboarding
   const { data: patient } = await supabase
     .from("patients")
-    .select("*")
+    .select("patient_id, patient_name, is_patient, is_caregiver, currently_hospitalized, discharge_date, on_immunosuppressants, has_other_medications, has_social_support, has_caregiver, physical_ability_level, has_weakened_immune, updated_at")
     .eq("user_id", user.id)
     .single();
 
@@ -132,6 +134,79 @@ export default async function DashboardPage() {
     redirect("/checkin");
   }
 
+  // Fetch last 91 check-ins for reminder logic
+  const { data: recentCheckinsRaw } = await supabase
+    .from("daily_checkins")
+    .select("risk_level, checkin_date")
+    .eq("patient_id", patient.patient_id)
+    .order("checkin_date", { ascending: false })
+    .limit(91);
+
+  const recentCheckins = (recentCheckinsRaw ?? []) as {
+    risk_level: RiskLevel;
+    checkin_date: string;
+  }[];
+
+  // Fetch yesterday's reminder state for no-repeat logic
+  const yesterdayStr = (() => {
+    const d = new Date(`${today}T12:00:00`);
+    d.setDate(d.getDate() - 1);
+    return d.toISOString().split("T")[0];
+  })();
+
+  const { data: reminderState } = await supabase
+    .from("dashboard_reminder_state")
+    .select("reminder_ids, reminder_date")
+    .eq("patient_id", patient.patient_id)
+    .maybeSingle();
+
+  const yesterdayReminderIds: ReminderId[] =
+    reminderState?.reminder_date === yesterdayStr
+      ? (reminderState.reminder_ids as ReminderId[])
+      : [];
+
+  // Compute days since discharge
+  const dischargeDate = patient.discharge_date?.includes("T")
+    ? patient.discharge_date.split("T")[0]
+    : patient.discharge_date;
+
+  const daysSinceDischarge = patient.discharge_date
+    ? Math.floor(
+        (new Date(`${today}T12:00:00`).getTime() -
+          new Date(`${dischargeDate}T12:00:00`).getTime()) /
+          86_400_000,
+      )
+    : null;
+
+  const reminders = getDashboardReminders({
+    isCaregiver: patient.is_caregiver ?? false,
+    isPatient: patient.is_patient ?? true,
+    currentlyHospitalized: patient.currently_hospitalized ?? false,
+    onImmunossuppressants: patient.on_immunosuppressants ?? false,
+    hasOtherMedications: patient.has_other_medications ?? false,
+    hasSocialSupport: patient.has_social_support ?? true,
+    hasCaregiver: patient.has_caregiver ?? false,
+    physicalAbilityLevel: patient.physical_ability_level ?? null,
+    hasWeakenedImmune: patient.has_weakened_immune ?? false,
+    profileLastUpdated: patient.updated_at ?? null,
+    recentCheckins,
+    today,
+    todayCheckinComplete: true,
+    yesterdayReminderIds,
+    daysSinceDischarge,
+  });
+
+  await supabase
+    .from("dashboard_reminder_state")
+    .upsert(
+      {
+        patient_id: patient.patient_id,
+        reminder_ids: reminders.map((r) => r.id),
+        reminder_date: today,
+      },
+      { onConflict: "patient_id" },
+    );
+
   const riskLevel: RiskLevel = latestCheckin.risk_level as RiskLevel;
   const riskConfig = riskDisplayConfig[riskLevel];
   const greeting = getGreeting();
@@ -200,6 +275,8 @@ export default async function DashboardPage() {
 
       {/* ── Navigation cards ── */}
       <div className="relative z-10 flex w-full max-w-md flex-col gap-6 mt-10">
+        {reminders.length > 0 && <DashboardRemindersSection reminders={reminders} />}
+
         {/* Education Modules card */}
         <Link
           href="/education"
