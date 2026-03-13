@@ -342,7 +342,6 @@ export default function CheckInPage() {
 
   // ----- Emergency alert overlay -----
   if (emergency && !emergencyDismissed) {
-    console.log(emergency);
     return (
       <div className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-[#ff3636] px-4">
         <div className="flex w-full max-w-md flex-col items-center gap-6">
