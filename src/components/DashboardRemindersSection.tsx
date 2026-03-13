@@ -63,7 +63,13 @@ function ScrollArrow({ direction }: { direction: "up" | "down" }) {
     </svg>
   );
 }
-function ReminderCard({ reminder }: { reminder: DashboardReminder }) {
+function ReminderCard({
+  reminder,
+  onDismiss,
+}: {
+  reminder: DashboardReminder;
+  onDismiss: () => void;
+}) {
   return (
     <div className="flex min-h-[88px] items-center gap-4 rounded-[14px] bg-[#efefef] p-4">
       <div className="flex min-w-0 flex-1 items-center justify-between gap-4">
@@ -74,12 +80,14 @@ function ReminderCard({ reminder }: { reminder: DashboardReminder }) {
           <p className="mt-1 text-sm leading-[1.35] text-black/70">{reminder.body}</p>
         </div>
 
-        <div
-          aria-hidden="true"
-          className="flex size-8 shrink-0 items-center justify-center rounded-full text-black"
+        <button
+          type="button"
+          onClick={onDismiss}
+          aria-label={`Dismiss ${reminder.title}`}
+          className="flex size-8 shrink-0 cursor-pointer items-center justify-center rounded-full text-black"
         >
           <CloseIcon className="size-6" />
-        </div>
+        </button>
       </div>
     </div>
   );
@@ -90,6 +98,8 @@ export default function DashboardRemindersSection({
 }: {
   reminders: DashboardReminder[];
 }) {
+  const [dismissedIds, setDismissedIds] = useState<Set<string>>(new Set());
+  const visibleReminders = reminders.filter((r) => !dismissedIds.has(r.id));
   const viewportRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
   const [scrollState, setScrollState] = useState(INITIAL_SCROLL_STATE);
@@ -172,6 +182,8 @@ export default function DashboardRemindersSection({
     });
   };
 
+  if (visibleReminders.length === 0) return null;
+
   return (
     <>
       <section
@@ -182,13 +194,6 @@ export default function DashboardRemindersSection({
           <h2 className="text-[26px] font-semibold leading-none text-black">
             Reminders
           </h2>
-
-          <div
-            aria-hidden="true"
-            className="flex size-8 items-center justify-center rounded-full bg-[#efefef] text-black"
-          >
-            <CloseIcon />
-          </div>
         </div>
 
         <div className="flex items-start gap-1">
@@ -201,8 +206,14 @@ export default function DashboardRemindersSection({
             }}
           >
             <div ref={contentRef} className="flex flex-col gap-4">
-              {reminders.map((reminder) => (
-                <ReminderCard key={reminder.id} reminder={reminder} />
+              {visibleReminders.map((reminder) => (
+                <ReminderCard
+                  key={reminder.id}
+                  reminder={reminder}
+                  onDismiss={() =>
+                    setDismissedIds((prev) => new Set([...prev, reminder.id]))
+                  }
+                />
               ))}
             </div>
           </div>

@@ -66,8 +66,8 @@ export function getDashboardReminders(input: {
   } else {
     if (
       slots.length < 3 &&
-      input.recentCheckins[0]?.risk_level === "RED_EMERGENCY" &&
-      input.recentCheckins[0]?.checkin_date === yesterday
+      input.recentCheckins[1]?.risk_level === "RED_EMERGENCY" &&
+      input.recentCheckins[1]?.checkin_date === yesterday
     ) {
       slots.push(
         createReminder(
@@ -82,7 +82,7 @@ export function getDashboardReminders(input: {
     if (
       slots.length < 3 &&
       !slots.some((reminder) => reminder.id === "D2") &&
-      countConsecutive(input.recentCheckins, "YELLOW") >= 3
+      countConsecutive(input.recentCheckins.slice(1), "YELLOW") >= 3
     ) {
       slots.push(
         createReminder(
