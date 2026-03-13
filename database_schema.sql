@@ -650,22 +650,6 @@ COMMENT ON COLUMN daily_checkins.wound_state_level IS 'NULL when no wound presen
 COMMENT ON COLUMN daily_checkins.discolored_skin IS 'Blue, purple, or gray discoloration of skin/lips/nails. Triggers RED_EMERGENCY in checkEmergencyConditions() regardless of other scores.';
 
 -- =============================================================================
--- MIGRATION NOTES
--- If running against an existing database, apply these three ALTER statements
--- before running the full schema above, or run them as a standalone migration:
---
---   ALTER TABLE daily_checkins ALTER COLUMN thinking_level DROP NOT NULL;
---   ALTER TABLE daily_checkins ALTER COLUMN breathing_level DROP NOT NULL;
---   ALTER TABLE daily_checkins ALTER COLUMN urine_appearance_level DROP NOT NULL;
---
--- These three columns previously had implicit NOT NULL from their CHECK constraints
--- (which lacked IS NULL OR guards). They must be nullable because emergency survey
--- termination at questions 1–13 leaves them unanswered on partial check-in submits.
--- The route's NUMERIC_RANGES guard already handles NULL correctly via the
--- `payload[col] !== null` check and will not falsely reject these columns.
--- =============================================================================
-
--- =============================================================================
 -- SAMPLE DATA (Optional — uncomment to test)
 -- =============================================================================
 
