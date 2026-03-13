@@ -623,38 +623,6 @@ END;
 $$ LANGUAGE plpgsql IMMUTABLE;
 
 -- =============================================================================
--- VIEWS FOR COMMON QUERIES
--- =============================================================================
-
--- Recent high-risk check-ins for the authenticated user
-CREATE OR REPLACE VIEW high_risk_checkins AS
-SELECT
-    dc.*,
-    p.patient_name,
-    calculate_age(p.birthday) AS age,
-    calculate_age(p.birthday) >= 65 OR p.has_weakened_immune OR p.admitted_count > 1 OR p.on_immunosuppressants AS patient_high_risk
-FROM daily_checkins dc
-JOIN patients p ON dc.patient_id = p.patient_id
-WHERE dc.risk_level IN ('RED', 'RED_EMERGENCY')
-  AND p.user_id = auth.uid()
-ORDER BY dc.checkin_date DESC;
-
--- Patient summary with most recent check-in for the authenticated user
-CREATE OR REPLACE VIEW patient_summary AS
-SELECT
-    p.*,
-    dc.checkin_date AS last_checkin_date,
-    dc.risk_level AS last_risk_level
-FROM patients p
-LEFT JOIN LATERAL (
-    SELECT checkin_date, risk_level FROM daily_checkins
-    WHERE patient_id = p.patient_id
-    ORDER BY checkin_date DESC
-    LIMIT 1
-) dc ON true
-WHERE p.user_id = auth.uid();
-
--- =============================================================================
 -- COLUMN COMMENTS
 -- =============================================================================
 

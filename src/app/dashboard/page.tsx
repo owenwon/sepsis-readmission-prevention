@@ -128,8 +128,11 @@ export default async function DashboardPage() {
     .eq("checkin_date", today)
     .maybeSingle();
 
-  const hasCheckin = !!latestCheckin;
-  const riskLevel: RiskLevel = (latestCheckin?.risk_level as RiskLevel) ?? "GREEN";
+  if (!latestCheckin) {
+    redirect("/checkin");
+  }
+
+  const riskLevel: RiskLevel = latestCheckin.risk_level as RiskLevel;
   const riskConfig = riskDisplayConfig[riskLevel];
   const greeting = getGreeting();
 
@@ -168,47 +171,31 @@ export default async function DashboardPage() {
             {greeting}, {patient.patient_name}
           </p>
           <h1 className="text-3xl font-semibold text-black leading-tight">
-            {hasCheckin
-              ? "Well done completing your daily check in!"
-              : "Ready for your daily check in?"}
+            Well done completing your daily check in!
           </h1>
         </div>
 
-        {/* Risk Level card (shown after check-in) or Start card */}
-        {hasCheckin ? (
-          <div className="flex w-full flex-col gap-4 overflow-hidden rounded-[14px] bg-white p-4 shadow-[0px_4px_12px_rgba(0,0,0,0.15)]">
-            <p className="text-2xl font-semibold text-black">
-              Risk Level: {riskConfig.label}
-            </p>
-            <div className="w-full">
-              <Image
-                src={riskConfig.gaugeImage}
-                alt={`Risk gauge showing ${riskConfig.label}`}
-                width={326}
-                height={163}
-                className="mx-auto h-auto w-full"
-              />
-            </div>
-            <Link
-              href="/checkin/review"
-              className="flex h-[50px] w-full items-center justify-center rounded-[14px] bg-[#186346] text-lg font-semibold text-white hover:opacity-90 transition-opacity"
-            >
-              Review my answers
-            </Link>
+        {/* Risk Level card */}
+        <div className="flex w-full flex-col gap-4 overflow-hidden rounded-[14px] bg-white p-4 shadow-[0px_4px_12px_rgba(0,0,0,0.15)]">
+          <p className="text-2xl font-semibold text-black">
+            Risk Level: {riskConfig.label}
+          </p>
+          <div className="w-full">
+            <Image
+              src={riskConfig.gaugeImage}
+              alt={`Risk gauge showing ${riskConfig.label}`}
+              width={326}
+              height={163}
+              className="mx-auto h-auto w-full"
+            />
           </div>
-        ) : (
-          <div className="flex w-full flex-col gap-4 overflow-hidden rounded-[14px] bg-white p-6 shadow-[0px_4px_12px_rgba(0,0,0,0.15)]">
-            <p className="text-xl font-semibold text-black">
-              Complete your daily symptom check to monitor your recovery.
-            </p>
-            <Link
-              href="/checkin"
-              className="flex h-[50px] w-full items-center justify-center rounded-[14px] bg-[#186346] text-lg font-semibold text-white hover:opacity-90 transition-opacity"
-            >
-              Start Check-in
-            </Link>
-          </div>
-        )}
+          <Link
+            href="/checkin/review"
+            className="flex h-[50px] w-full items-center justify-center rounded-[14px] bg-[#186346] text-lg font-semibold text-white hover:opacity-90 transition-opacity"
+          >
+            Review my answers
+          </Link>
+        </div>
       </div>
 
       {/* ── Navigation cards ── */}
