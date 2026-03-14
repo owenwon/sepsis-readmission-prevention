@@ -449,6 +449,17 @@ CREATE INDEX idx_daily_checkins_risk_level ON daily_checkins(risk_level)
 CREATE INDEX idx_daily_checkins_patient_date ON daily_checkins(patient_id, checkin_date DESC);
 
 -- =============================================================================
+-- DASHBOARD REMINDER STATE TABLE
+-- =============================================================================
+
+CREATE TABLE dashboard_reminder_state (
+    patient_id UUID PRIMARY KEY REFERENCES patients(patient_id) ON DELETE CASCADE,
+    reminder_ids TEXT[] NOT NULL DEFAULT '{}',
+    dismissed_ids TEXT[] NOT NULL DEFAULT '{}',
+    reminder_date DATE NOT NULL DEFAULT CURRENT_DATE
+);
+
+-- =============================================================================
 -- TRIGGERS FOR UPDATED_AT TIMESTAMPS
 -- =============================================================================
 
@@ -476,6 +487,7 @@ CREATE TRIGGER update_daily_checkins_updated_at
 
 ALTER TABLE patients ENABLE ROW LEVEL SECURITY;
 ALTER TABLE daily_checkins ENABLE ROW LEVEL SECURITY;
+ALTER TABLE dashboard_reminder_state ENABLE ROW LEVEL SECURITY;
 
 CREATE POLICY "Users can view their own patient record"
     ON patients FOR SELECT
@@ -507,6 +519,30 @@ CREATE POLICY "Users can insert their own check-ins"
 
 CREATE POLICY "Users can update their own check-ins"
     ON daily_checkins FOR UPDATE
+    USING (
+        patient_id IN (
+            SELECT patient_id FROM patients WHERE user_id = auth.uid()
+        )
+    );
+
+CREATE POLICY "Users can view their own reminder state"
+    ON dashboard_reminder_state FOR SELECT
+    USING (
+        patient_id IN (
+            SELECT patient_id FROM patients WHERE user_id = auth.uid()
+        )
+    );
+
+CREATE POLICY "Users can insert their own reminder state"
+    ON dashboard_reminder_state FOR INSERT
+    WITH CHECK (
+        patient_id IN (
+            SELECT patient_id FROM patients WHERE user_id = auth.uid()
+        )
+    );
+
+CREATE POLICY "Users can update their own reminder state"
+    ON dashboard_reminder_state FOR UPDATE
     USING (
         patient_id IN (
             SELECT patient_id FROM patients WHERE user_id = auth.uid()
