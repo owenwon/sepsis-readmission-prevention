@@ -156,7 +156,7 @@ export default async function DashboardPage() {
 
   const { data: reminderState } = await supabase
     .from("dashboard_reminder_state")
-    .select("reminder_ids, reminder_date")
+    .select("reminder_ids, reminder_date, dismissed_ids")
     .eq("patient_id", patient.patient_id)
     .maybeSingle();
 
@@ -196,6 +196,13 @@ export default async function DashboardPage() {
     daysSinceDischarge,
   });
 
+  const todayReminderIds = new Set<string>(reminders.map((r) => r.id));
+  const initialDismissedIds = (
+    (reminderState?.dismissed_ids ?? []) as string[]
+  ).filter((id) => todayReminderIds.has(id));
+
+  const isNewDay = reminderState?.reminder_date !== today;
+
   await supabase
     .from("dashboard_reminder_state")
     .upsert(
@@ -203,6 +210,7 @@ export default async function DashboardPage() {
         patient_id: patient.patient_id,
         reminder_ids: reminders.map((r) => r.id),
         reminder_date: today,
+        ...(isNewDay ? { dismissed_ids: [] } : {}),
       },
       { onConflict: "patient_id" },
     );
@@ -274,8 +282,13 @@ export default async function DashboardPage() {
       </div>
 
       {/* ── Navigation cards ── */}
-      <div className="relative z-10 flex w-full max-w-md flex-col gap-6 mt-10">
-        {reminders.length > 0 && <DashboardRemindersSection reminders={reminders} />}
+      <div className="relative z-10 flex w-full max-w-md flex-col gap-6">
+        {reminders.length > 0 && (
+          <DashboardRemindersSection
+            reminders={reminders}
+            initialDismissedIds={initialDismissedIds}
+          />
+        )}
 
         {/* Education Modules card */}
         <Link

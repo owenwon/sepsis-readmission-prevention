@@ -95,14 +95,30 @@ function ReminderCard({
 
 export default function DashboardRemindersSection({
   reminders,
+  initialDismissedIds,
 }: {
   reminders: DashboardReminder[];
+  initialDismissedIds: string[];
 }) {
-  const [dismissedIds, setDismissedIds] = useState<Set<string>>(new Set());
+  const [dismissedIds, setDismissedIds] = useState<Set<string>>(
+    new Set(initialDismissedIds),
+  );
   const visibleReminders = reminders.filter((r) => !dismissedIds.has(r.id));
   const viewportRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
   const [scrollState, setScrollState] = useState(INITIAL_SCROLL_STATE);
+
+  const handleDismiss = (reminderId: string) => {
+    setDismissedIds((prev) => new Set([...prev, reminderId]));
+
+    void fetch("/api/reminders/dismiss", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ reminder_id: reminderId }),
+    }).catch(() => undefined);
+  };
 
   useEffect(() => {
     const updateScrollState = () => {
@@ -210,9 +226,7 @@ export default function DashboardRemindersSection({
                 <ReminderCard
                   key={reminder.id}
                   reminder={reminder}
-                  onDismiss={() =>
-                    setDismissedIds((prev) => new Set([...prev, reminder.id]))
-                  }
+                  onDismiss={() => handleDismiss(reminder.id)}
                 />
               ))}
             </div>
